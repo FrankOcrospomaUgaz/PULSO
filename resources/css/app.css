@@ -1,0 +1,25 @@
+        /* Para el sticky footer */
+        html {
+            min-height: 100%;
+            position: relative;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            margin: 0;
+            padding-bottom: 100px; /* Altura del footer */
+        }
+
+        footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 100px; /* Altura del footer */
+            background-color: #004d40; /* Cambia el color a tu gusto */
+        }
+
+        .content {
+            flex: 1 0 auto;
+        }

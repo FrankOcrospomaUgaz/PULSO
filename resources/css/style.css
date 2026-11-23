@@ -1,0 +1,47 @@
+.main-content {
+    padding: 20px;
+    border-radius: 30px;
+    background-color: white;
+    margin: 20px;
+}
+
+/* Estilo personalizado para el encabezado de la tabla */
+.thead-custom {
+    background-color: #343a40; /* Color de fondo oscuro */
+    color: white; /* Color de texto blanco */
+    border-radius: 8px 8px 0 0; /* Bordes redondeados solo en la parte superior */
+}
+
+.thead-custom th {
+    padding: 12px; /* Espaciado interior */
+    text-align: left; /* Alineación del texto a la izquierda */
+    font-weight: bold; /* Texto en negrita */
+}
+/* Ajuste para la alineación de los botones de paginación */
+.dataTables_wrapper .dataTables_paginate {
+    display: flex;
+    justify-content: center; /* Centra horizontalmente */
+    align-items: center; /* Centra verticalmente */
+    margin-top: 30px; /* Ajusta el margen superior si es necesario */
+}
+/* Aplicar estilos específicos a los botones de paginación */
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    background-color: transparent !important; /* Fondo transparente */
+    color: inherit !important; /* Mantener el color del texto */
+    box-shadow: none !important; /* Sin sombra */
+    border: none !important; /* Sin borde */
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    background-color: transparent !important; /* Fondo transparente al pasar el cursor */
+    color: white !important; /* Color de texto blanco para la página actual */
+    border-radius: 30% !important; /* Redondear el botón de la página actual */
+
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    background-color: #343a40 !important; /* Color de fondo para la página actual (puedes ajustar este color si lo deseas) */
+    color: white !important; /* Color de texto blanco para la página actual */
+    border-radius: 30% !important; /* Redondear el botón de la página actual */
+}
+

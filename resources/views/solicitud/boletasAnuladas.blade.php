@@ -1,0 +1,228 @@
+@extends('layouts.app')
+
+@section('template_title')
+    Solicitudes
+@endsection
+
+@section('content')
+    <div class="main-body">
+        <div class="row" style="margin-top: 0px;">
+            <div class="col s12">
+                <div class="card main-content">
+                    <div class="card-content" style="margin-top: -20px">
+                        <div class="row valign-wrapper" style="margin-bottom: 10px;">
+                            {{-- <div class="col s12 m3">
+                                <div class="input-field">
+                                    <select id="tipo-filter" name="tipo" onchange="filterHabitaciones()">
+                                        <option value="0">Todos</option>
+                                        @foreach ($tipodocumentos as $tipodocumento)
+                                            <option value="{{ $tipodocumento->id }}"
+                                                {{ request('tipodocumento') == $tipodocumento ? 'selected' : '' }}>
+{{ $tipodocumento->nombre }}                        </option>
+
+                                                @endforeach
+                                    </select>
+                                    <label>Tipo</label>
+                                </div>
+                            </div> --}}
+                            @php
+                            $fecha_inicio = date('Y-m-01'); // Primer día del mes actual
+                            $fecha_fin = date('Y-m-d'); // Día actual
+                        @endphp
+                        
+                        <!-- Fecha de inicio -->
+                        <div class="col s12 m3">
+                            <div class="input-field">
+                                <input type="date" id="fecha_inicio" name="fecha_inicio" value="{{ $fecha_inicio }}">
+                                <label for="fecha_inicio" class="active">Fecha de inicio</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Fecha de fin -->
+                        <div class="col s12 m3">
+                            <div class="input-field">
+                                <input type="date" id="fecha_fin" name="fecha_fin" value="{{ $fecha_fin }}">
+                                <label for="fecha_fin" class="active">Fecha de fin</label>
+                            </div>
+                        </div>
+                        
+                            <!-- Filtro de Situación -->
+                            <div class="col s12 m3">
+                                <div class="input-field">
+                                    <select id="situacion-filter" name="situacion" onchange="filterHabitaciones()">
+                                        <option value="0">Todos</option>
+                                        @foreach ($estados as $estado)
+                                        <option value="{{ $estado}}"
+                                            {{ request('estado') == $estado ? 'selected' : '' }}>
+                                            {{ $estado }}                        </option>
+
+                                            @endforeach
+                                    </select>
+                                    <label>Estado</label>
+                                </div>
+                            </div>
+
+
+                            <!-- Columna del buscador -->
+                            <div class="col s12 m4 left-align">
+                                <div class="input-field" style="margin: 0;">
+                                    <i class="material-icons prefix">search</i>
+                                    <input type="text" id="search-input" class="validate" placeholder="Buscar...">
+                                </div>
+                            </div>
+
+
+                        </div>
+                        <div class="row"
+                            style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 10px;">
+                            <div class="col s12 m8 left-align valign-wrapper">
+                                <label for="records-per-page" style="margin-right: 10px;">Registros por página:</label>
+                                <div class="input-field" style="margin: 0;">
+                                    <select id="records-per-page" class="browser-default">
+                                        <option value="10">10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col s12 m12  l4 search-with-report right-align ">
+
+                                <button class="btn teal tooltipped btn-buscar" id="btn-Comprobante" data-tooltip="Buscar"
+                                    type="button" onclick="document.getElementById('page').value=1;buscar();"><i
+                                        class="fa-solid fa-magnifying-glass white-text"></i></button>
+                                <button class="btn red tooltipped truncated btn-pdf" id="btn-pdf-Comprobante"
+                                        data-tooltip="Reporte en PDF" type="button"
+                                        onclick="generatePDFReport()">
+                                        <i class="fa-solid fa-file-pdf white-text right"></i>PDF
+                                    </button>
+                                    
+                                <button class="btn green tooltipped truncated btn-excel" id="btn-excel-Comprobante"
+                                    data-tooltip="Reporte en Excel" type="button"
+                                    onclick="generateExcelReport()"><i
+                                        class="fa-solid fa-file white-text right"></i>Excel</button>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    @if ($message = Session::get('success'))
+                        <div class="card-panel green lighten-4 green-text text-darken-4">
+                            <p>{{ $message }}</p>
+                        </div>
+                    @endif
+
+                    <!-- Tabla de datos -->
+                    <div id="tb-container" class="table-responsive">
+                        <table id="data-table" class="highlight striped centered nowrap" style="width:100%">
+                            <thead class="thead-custom">
+                                <tr>
+                                    <th class="center">Tipo</th>
+                                    <th class="center">Número</th>
+                                    <th class="center" >RUC de facturador</th>
+                                   
+                                    <th class="center">Moneda</th>
+                                  
+                                    <th class="center">Estado</th>
+                                    <th class="center">Fecha de solicitud</th>
+                                    <th class="center">F. de envío</th>
+                                    <th class="center">F. de respuesta</th>
+                                    <th class="center">F. de comprobantes</th>
+                                    <th class="center">Operaciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($solicituds as $solicitud)
+                                    <tr>
+                                        <td class="center">{{ $solicitud->tipo_documento == 'E' ? 'Anulación de Boletas' : 'Anulación de Facturaa' }}
+                                        </td>
+                                        
+                                        <td class="center">{{  $solicitud->tipo_documento .  $solicitud->serie . '-' . $solicitud->correlativo }}</td>
+                                        <td class="center">
+                                            {{ $solicitud->facturador->sucursal->empresa->ruc }}</td>
+                                     
+                                        <td class="center">{{ $solicitud->moneda }}</td>
+                                        <td class="center">
+                                            @php
+                                                switch($solicitud->estado) {
+                                                    case 'R':
+                                                        $estado = 'Aún no declarado';
+                                                        $color = 'yellow black-text';
+                                                        break;
+                                                    case 'E':
+                                                    case 'P':
+                                                        $estado = 'No registrado';
+                                                        $color = 'pink white-text';
+                                                        break;
+                                                    case 'M':
+                                                    case 'T':
+                                                        $estado = 'Declarado y activo';
+                                                        $color = 'green';
+                                                        break;
+                                                    case 'B':
+                                                        $estado = 'Declarado y anulado';
+                                                        $color = 'red white-text';
+                                                        break;
+                                                    case 'I':
+                                                        $estado = 'Declarado e incorrecto';
+                                                        $color = 'purple white-text';
+                                                        break;
+                                                    case 'S':
+                                                    case 'C':
+                                                        $estado = 'Declarado sin comprobar';
+                                                        $color = 'blue white-text';
+                                                        break;
+                                                    default:
+                                                        $estado = 'No tributable';
+                                                        $color = 'grey white-text';
+                                                        break;
+                                                }
+                                            @endphp
+                                            <span class="new badge {{ $color }}" data-badge-caption="{{ $estado }}"></span>
+                                        </td>
+                                        <td class="center">{{ $solicitud->fecha }}</td>
+                                        <td class="center">{{ $solicitud->fecha_envio }}</td>
+                                        <td class="center">{{ $solicitud->fecha_respuesta }}</td>
+                                        <td class="center">
+                                            {{ json_decode($solicitud->data)->fechaemision ?? '-' }}
+                                        </td>
+                                        <td class="center">
+                                            @foreach ($operaciones as $operacion)
+                                                @if ($operacion->tipo == 'Registro')
+                                                    @if ($operacion->accion === 'verBoletas')
+                                                    <a href="{{ route($operacion->accion, $solicitud->id) }}"
+                                                        class="btn-floating {{ $operacion->color }} darken-1 waves-light tooltipped btn-crear"
+                                                            data-tooltip="{{ $operacion->comentario }}">
+                                                            {!! $operacion->imagen !!}
+                                                        </a>                                               
+                                                    @endif
+                                                   
+                                                @endif
+                                            @endforeach
+                                        </td>                                                                      
+
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+
+
+                        <!-- Paginación -->
+                        <div class="row">
+                            <div class="col s12 m6">
+                                <p>Mostrando {{ $solicituds->firstItem() }} a {{ $solicituds->lastItem() }} de
+                                    {{ $solicituds->total() }} registros</p>
+                            </div>
+
+                            <div class="col s12 m6 right-align">
+                                {{ $solicituds->links() }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
