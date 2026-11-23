@@ -20,7 +20,7 @@ $cajaAbierta = $cajaSituacion === 'A';
 $cajaNumero = $cajaAperurada?->numero ?? 'Sin caja';
 $cajaTooltip = $cajaAperurada ? ($cajaAbierta ? 'Aperturada' : 'Cerrada') : 'Sin caja asignada';
 ?>
-<nav class="teal darken-1">
+<nav class="teal darken-1 pulso-navigation">
     <div class="nav-wrapper nav-content" 
            style="display: flex; ">
         <!-- Menú hamburguesa a la izquierda -->
@@ -87,7 +87,7 @@ $cajaTooltip = $cajaAperurada ? ($cajaAbierta ? 'Aperturada' : 'Cerrada') : 'Sin
 
 <ul id="slide-out" class="sidenav">
     <li class="center-align">
-        <img src="{{ asset('img/Logo_HotelHub_tr.png') }}" alt="Logo" style="max-width: 100%; height: auto;">
+        <img src="{{ asset('img/pulso-logo.jpg') }}" alt="Pulso+ · Gestiona salud" style="display:block; width: min(88%, 230px); height:auto; margin: 22px auto; border-radius: 10px;">
     </li>
 
     @guest

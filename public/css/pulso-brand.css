@@ -1,0 +1,848 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+:root {
+    --pulso-navy: #111932;
+    --pulso-blue: #1e3d8a;
+    --pulso-sky: #24baf3;
+    --pulso-yellow: #ffcc53;
+    --pulso-ink: #17213b;
+    --pulso-muted: #737d92;
+    --pulso-line: #e5eaf2;
+    --pulso-cloud: #f1f2f2;
+    --pulso-white: #fff;
+    --pulso-shadow: 0 18px 55px rgba(17, 25, 50, .12);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+.swal2-container {
+    font-family: 'Poppins', 'Source Sans Pro', sans-serif;
+}
+
+body {
+    color: var(--pulso-ink);
+    background-color: var(--pulso-cloud);
+}
+
+nav,
+nav.teal,
+nav.teal.darken-1,
+.nav-wrapper {
+    background-color: var(--pulso-navy) !important;
+}
+
+.teal,
+.teal.darken-1,
+.teal.darken-2,
+.teal.darken-3,
+.teal.lighten-1,
+.teal.lighten-2 {
+    background-color: var(--pulso-blue) !important;
+}
+
+.teal-text,
+.teal-text.text-darken-1,
+.teal-text.text-darken-2 {
+    color: var(--pulso-blue) !important;
+}
+
+nav .brand-logo,
+nav .sidenav-trigger,
+nav .nav-content a,
+nav .nav-content i {
+    color: var(--pulso-white) !important;
+}
+
+.sidenav {
+    background: #fff;
+    color: var(--pulso-ink);
+    box-shadow: 14px 0 42px rgba(17, 25, 50, .16);
+}
+
+.sidenav li > a,
+.sidenav .subheader {
+    color: var(--pulso-ink);
+}
+
+.sidenav li > a:hover,
+.sidenav li.active > a {
+    color: var(--pulso-blue);
+    background: #eef7fc;
+}
+
+.btn,
+.btn-large,
+.btn-small,
+button[type="submit"]:not(.swal2-styled):not(.pulso-login-submit) {
+    border-radius: 10px;
+    background-color: var(--pulso-blue);
+    box-shadow: 0 5px 14px rgba(30, 61, 138, .18);
+    transition: background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.btn:hover,
+.btn-large:hover,
+.btn-small:hover,
+button[type="submit"]:not(.swal2-styled):not(.pulso-login-submit):hover {
+    background-color: #172f6c;
+    box-shadow: 0 8px 18px rgba(30, 61, 138, .24);
+    transform: translateY(-1px);
+}
+
+.btn-flat,
+.modal .modal-footer .btn-flat {
+    color: var(--pulso-blue);
+    background: transparent;
+    box-shadow: none;
+}
+
+.btn-flat:hover,
+.modal .modal-footer .btn-flat:hover {
+    color: var(--pulso-navy);
+    background: #eef4fa;
+    box-shadow: none;
+}
+
+input:not([type]),
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea.materialize-textarea,
+select {
+    border-color: #d9e0eb;
+}
+
+input:not([type]):focus:not([readonly]),
+input[type="text"]:focus:not([readonly]),
+input[type="password"]:focus:not([readonly]),
+input[type="email"]:focus:not([readonly]),
+input[type="number"]:focus:not([readonly]),
+input[type="search"]:focus:not([readonly]),
+input[type="tel"]:focus:not([readonly]),
+input[type="url"]:focus:not([readonly]),
+textarea.materialize-textarea:focus:not([readonly]) {
+    border-bottom: 1px solid var(--pulso-sky) !important;
+    box-shadow: 0 1px 0 0 var(--pulso-sky) !important;
+}
+
+.modal {
+    width: min(88vw, 760px);
+    max-height: min(82vh, 820px);
+    border: 1px solid rgba(17, 25, 50, .06);
+    border-radius: 22px;
+    background: var(--pulso-white);
+    box-shadow: 0 28px 90px rgba(17, 25, 50, .24);
+    overflow: hidden;
+}
+
+.modal .modal-content {
+    padding: 30px 32px;
+    color: var(--pulso-ink);
+}
+
+.modal .modal-content h1,
+.modal .modal-content h2,
+.modal .modal-content h3,
+.modal .modal-content h4,
+.modal .modal-content h5,
+.modal .modal-content .card-title {
+    color: var(--pulso-navy);
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+}
+
+.modal .modal-footer {
+    min-height: 72px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--pulso-line);
+    background: #fbfcfe;
+}
+
+.modal .modal-footer .btn,
+.modal .modal-footer .btn-large,
+.modal .modal-footer .btn-small {
+    margin-left: 8px;
+}
+
+.modal-overlay {
+    background: rgba(9, 18, 43, .58);
+    backdrop-filter: blur(3px);
+}
+
+.modal.bottom-sheet {
+    border-radius: 24px 24px 0 0;
+}
+
+.swal2-popup {
+    width: min(92vw, 480px);
+    padding: 2rem 1.8rem 1.7rem;
+    border: 1px solid rgba(17, 25, 50, .07);
+    border-radius: 22px;
+    color: var(--pulso-ink);
+    box-shadow: var(--pulso-shadow);
+}
+
+.swal2-title {
+    color: var(--pulso-navy) !important;
+    font-size: 1.35rem !important;
+    font-weight: 600 !important;
+}
+
+.swal2-html-container,
+.swal2-content {
+    color: #68738b !important;
+    font-size: .94rem !important;
+}
+
+.swal2-styled.swal2-confirm {
+    min-height: 44px;
+    padding: 0 22px;
+    border-radius: 10px !important;
+    background: var(--pulso-blue) !important;
+    box-shadow: 0 5px 14px rgba(30, 61, 138, .2) !important;
+    font-weight: 600;
+}
+
+.swal2-styled.swal2-cancel {
+    min-height: 44px;
+    padding: 0 22px;
+    border: 1px solid var(--pulso-line) !important;
+    border-radius: 10px !important;
+    color: var(--pulso-ink) !important;
+    background: #fff !important;
+    box-shadow: none !important;
+}
+
+.swal2-icon.swal2-info {
+    border-color: var(--pulso-sky);
+    color: var(--pulso-sky);
+}
+
+.swal2-icon.swal2-success [class^="swal2-success-line"] {
+    background-color: #27a989;
+}
+
+.swal2-icon.swal2-success .swal2-success-ring {
+    border-color: rgba(39, 169, 137, .25);
+}
+
+.pulso-loading-overlay {
+    position: fixed;
+    z-index: 99999;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(11, 20, 47, .76);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+    opacity: 0;
+    transition: opacity .28s ease;
+}
+
+#loading-screen.pulso-loading-overlay {
+    background: rgba(11, 20, 47, .76);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+    opacity: 0;
+}
+
+.pulso-loading-card {
+    display: flex;
+    width: min(100%, 330px);
+    flex-direction: column;
+    align-items: center;
+    padding: 34px 32px 30px;
+    border: 1px solid rgba(255, 255, 255, .78);
+    border-radius: 24px;
+    background: rgba(255, 255, 255, .97);
+    box-shadow: 0 24px 75px rgba(4, 12, 33, .28);
+    text-align: center;
+}
+
+.pulso-loading-mark {
+    position: relative;
+    display: grid;
+    width: 100px;
+    height: 100px;
+    place-items: center;
+    margin-bottom: 18px;
+}
+
+.pulso-loading-mark img {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 6px 18px rgba(17, 25, 50, .14);
+}
+
+.pulso-loading-orbit {
+    position: absolute;
+    inset: 0;
+    border: 3px solid #e7edf5;
+    border-top-color: var(--pulso-sky);
+    border-right-color: var(--pulso-yellow);
+    border-radius: 50%;
+    animation: pulso-orbit 1.15s cubic-bezier(.62, .15, .37, .88) infinite;
+}
+
+.pulso-loading-brand {
+    margin: 0;
+    color: var(--pulso-navy);
+    font-size: 1.04rem;
+    font-weight: 700;
+    letter-spacing: .17em;
+}
+
+.pulso-loading-brand span {
+    color: var(--pulso-sky);
+}
+
+.pulso-loading-message {
+    margin: 7px 0 19px;
+    color: var(--pulso-muted);
+    font-size: .82rem;
+    line-height: 1.5;
+}
+
+.pulso-loading-progress {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #eaf0f6;
+}
+
+.pulso-loading-progress span {
+    position: absolute;
+    inset: 0 auto 0 -40%;
+    width: 40%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--pulso-sky), var(--pulso-blue));
+    animation: pulso-progress 1.45s ease-in-out infinite;
+}
+
+@keyframes pulso-orbit {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulso-progress {
+    to { transform: translateX(350%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}
+
+/* Login PULSO+ */
+.pulso-login-page {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--pulso-cloud);
+    color: var(--pulso-ink);
+    font-family: 'Poppins', sans-serif;
+}
+
+.pulso-login-shell {
+    display: grid;
+    min-height: 100vh;
+    grid-template-columns: minmax(380px, .92fr) minmax(500px, 1.08fr);
+}
+
+.pulso-login-brand-panel {
+    position: relative;
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    padding: clamp(38px, 5vw, 72px);
+    color: #fff;
+    background:
+        radial-gradient(circle at 18% 82%, rgba(36, 186, 243, .22), transparent 27%),
+        linear-gradient(145deg, #111932 0%, #142756 58%, #1e3d8a 100%);
+    isolation: isolate;
+}
+
+.pulso-login-brand-panel::before,
+.pulso-login-brand-panel::after {
+    position: absolute;
+    z-index: -1;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 50%;
+    content: '';
+    pointer-events: none;
+}
+
+.pulso-login-brand-panel::before {
+    top: 17%;
+    right: -210px;
+    width: 560px;
+    height: 560px;
+}
+
+.pulso-login-brand-panel::after {
+    top: 25%;
+    right: -145px;
+    width: 430px;
+    height: 430px;
+    border-color: rgba(36, 186, 243, .2);
+}
+
+.pulso-login-brand-lockup {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .07);
+    box-shadow: 0 12px 35px rgba(5, 11, 28, .16);
+}
+
+.pulso-login-brand-lockup img {
+    display: block;
+    width: clamp(175px, 18vw, 230px);
+    height: auto;
+}
+
+.pulso-login-copy {
+    max-width: 520px;
+    margin: 70px 0 auto;
+    padding: clamp(48px, 9vh, 110px) 0 50px;
+}
+
+.pulso-login-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 20px;
+    color: #a9dff5;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .17em;
+    text-transform: uppercase;
+}
+
+.pulso-login-eyebrow::before {
+    width: 24px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--pulso-yellow);
+    content: '';
+}
+
+.pulso-login-copy h1 {
+    max-width: 500px;
+    margin: 0;
+    color: #fff;
+    font-size: clamp(2.25rem, 4vw, 3.8rem);
+    font-weight: 500;
+    letter-spacing: -.055em;
+    line-height: 1.13;
+}
+
+.pulso-login-copy h1 span {
+    color: var(--pulso-sky);
+}
+
+.pulso-login-copy > p {
+    max-width: 420px;
+    margin: 23px 0 0;
+    color: rgba(255, 255, 255, .72);
+    font-size: .98rem;
+    line-height: 1.85;
+}
+
+.pulso-login-points {
+    display: grid;
+    gap: 13px;
+    margin: 34px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pulso-login-points li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, .88);
+    font-size: .87rem;
+}
+
+.pulso-login-points i {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid rgba(36, 186, 243, .32);
+    border-radius: 50%;
+    color: var(--pulso-sky);
+    font-size: .7rem;
+}
+
+.pulso-login-brand-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    color: rgba(255, 255, 255, .58);
+    font-size: .72rem;
+}
+
+.pulso-login-brand-footer span:last-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pulso-login-brand-footer i {
+    color: var(--pulso-yellow);
+}
+
+.pulso-application-logo {
+    display: block;
+    width: min(52vw, 220px);
+    height: auto;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(17, 25, 50, .12);
+}
+
+.pulso-guest-page {
+    background: var(--pulso-cloud);
+}
+
+.pulso-guest-page > .min-h-screen {
+    background: var(--pulso-cloud) !important;
+}
+
+.pulso-guest-page > .min-h-screen > div > a {
+    display: block;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.pulso-guest-page .pulso-application-logo {
+    width: min(52vw, 210px);
+    height: auto;
+}
+
+.pulso-dialog-overlay {
+    background: rgba(9, 18, 43, .58);
+    backdrop-filter: blur(3px);
+}
+
+.pulso-dialog-card {
+    border: 1px solid rgba(17, 25, 50, .07);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: var(--pulso-shadow);
+    color: var(--pulso-ink);
+}
+
+.pulso-dialog-card h1,
+.pulso-dialog-card h2,
+.pulso-dialog-card h3,
+.pulso-dialog-card h4 {
+    color: var(--pulso-navy);
+    font-weight: 600;
+}
+
+.pulso-housekeeping-page {
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at 12% 90%, rgba(36, 186, 243, .12), transparent 28%),
+        #f4f7fb !important;
+    color: var(--pulso-ink);
+}
+
+.pulso-housekeeping-card {
+    border: 1px solid rgba(17, 25, 50, .06);
+    border-radius: 20px;
+    border-radius: 20px;
+    box-shadow: var(--pulso-shadow);
+}
+
+.pulso-login-main {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    padding: 42px;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(36, 186, 243, .08), transparent 25%),
+        #f7f9fc;
+}
+
+.pulso-login-card {
+    width: min(100%, 460px);
+    padding: clamp(30px, 4vw, 48px);
+    border: 1px solid rgba(17, 25, 50, .06);
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 22px 65px rgba(17, 25, 50, .09);
+}
+
+.pulso-login-mobile-logo {
+    display: none;
+}
+
+.pulso-login-card .pulso-login-eyebrow {
+    margin-bottom: 12px;
+    color: var(--pulso-blue);
+    font-size: .68rem;
+}
+
+.pulso-login-card .pulso-login-eyebrow::before {
+    background: var(--pulso-sky);
+}
+
+.pulso-login-card h2 {
+    margin: 0;
+    color: var(--pulso-navy);
+    font-size: clamp(1.65rem, 3vw, 2rem);
+    font-weight: 600;
+    letter-spacing: -.045em;
+    line-height: 1.25;
+}
+
+.pulso-login-intro {
+    margin: 11px 0 31px;
+    color: var(--pulso-muted);
+    font-size: .87rem;
+    line-height: 1.7;
+}
+
+.pulso-login-field {
+    margin: 0 0 20px;
+}
+
+.pulso-login-field label {
+    display: block;
+    margin: 0 0 8px;
+    color: #3a455c;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+.pulso-login-input-wrap {
+    position: relative;
+}
+
+.pulso-login-input-wrap > i:first-child {
+    position: absolute;
+    top: 50%;
+    left: 15px;
+    z-index: 1;
+    color: #8a96aa;
+    font-size: .9rem;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.pulso-login-input-wrap input {
+    width: 100%;
+    height: 52px;
+    margin: 0;
+    padding: 0 46px 0 43px;
+    border: 1px solid #dce3ed !important;
+    border-radius: 11px !important;
+    outline: none;
+    background: #fbfcfe;
+    box-shadow: none !important;
+    color: var(--pulso-ink);
+    font: inherit;
+    font-size: .86rem;
+    transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.pulso-login-input-wrap input::placeholder {
+    color: #a0a9b8;
+}
+
+.pulso-login-input-wrap input:focus {
+    border-color: var(--pulso-sky) !important;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(36, 186, 243, .12) !important;
+}
+
+.pulso-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 9px;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #78849a;
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+
+.pulso-password-toggle:hover {
+    background: #eef4fa;
+    color: var(--pulso-blue);
+}
+
+.pulso-login-options {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 4px 0 25px;
+}
+
+.pulso-remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: #626e84;
+    font-size: .77rem;
+    cursor: pointer;
+}
+
+.pulso-remember input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--pulso-blue);
+}
+
+.pulso-login-forgot {
+    color: var(--pulso-blue);
+    font-size: .74rem;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.pulso-login-forgot:hover {
+    color: var(--pulso-navy);
+    text-decoration: underline;
+}
+
+.pulso-login-submit {
+    display: flex;
+    width: 100%;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+    border: 0;
+    border-radius: 11px;
+    background: linear-gradient(105deg, var(--pulso-blue), #2e58a8);
+    box-shadow: 0 9px 20px rgba(30, 61, 138, .2);
+    color: #fff;
+    font-family: inherit;
+    font-size: .88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.pulso-login-submit:hover {
+    box-shadow: 0 12px 26px rgba(30, 61, 138, .27);
+    filter: saturate(1.1);
+    transform: translateY(-1px);
+}
+
+.pulso-login-submit:focus-visible,
+.pulso-password-toggle:focus-visible,
+.pulso-login-forgot:focus-visible {
+    outline: 3px solid rgba(36, 186, 243, .45);
+    outline-offset: 3px;
+}
+
+.pulso-login-submit:disabled {
+    cursor: wait;
+    opacity: .72;
+    transform: none;
+}
+
+.pulso-login-footnote {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 23px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid #edf0f5;
+    color: #8490a2;
+    font-size: .7rem;
+    line-height: 1.6;
+}
+
+.pulso-login-footnote i {
+    margin-top: 2px;
+    color: #25a889;
+}
+
+@media (max-width: 980px) {
+    .pulso-login-shell {
+        grid-template-columns: minmax(320px, .82fr) minmax(440px, 1.18fr);
+    }
+
+    .pulso-login-brand-panel {
+        padding: 42px 34px;
+    }
+
+    .pulso-login-main {
+        padding: 28px;
+    }
+}
+
+@media (max-width: 760px) {
+    .pulso-login-shell {
+        display: block;
+        min-height: 100vh;
+    }
+
+    .pulso-login-brand-panel {
+        display: none;
+    }
+
+    .pulso-login-main {
+        min-height: 100vh;
+        padding: 28px 18px;
+    }
+
+    .pulso-login-card {
+        padding: 31px 26px 26px;
+    }
+
+    .pulso-login-mobile-logo {
+        display: block;
+        width: 156px;
+        margin: 0 auto 27px;
+        overflow: hidden;
+        border-radius: 11px;
+    }
+
+    .pulso-login-mobile-logo img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+}
+
+@media (max-width: 380px) {
+    .pulso-login-options {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

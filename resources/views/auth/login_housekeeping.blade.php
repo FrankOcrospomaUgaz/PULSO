@@ -4,8 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Housekeeping - Iniciar Sesión</title>
-    <link rel="icon" type="image/png" href="{{ asset('img/logo_h.png') }}">
+    <title>{{ config('app.name', 'PULSO+') }} · Acceso de equipo</title>
+    <link rel="icon" type="image/jpeg" href="{{ asset('img/pulso-favicon.jpg') }}">
+    <link rel="stylesheet" href="{{ asset('css/pulso-brand.css') }}">
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,8 +19,8 @@
                         manrope: "Manrope",
                     },
                     colors: {
-                        primary: "#00796b",
-                        dark: "#004d40",
+                        primary: "#1e3d8a",
+                        dark: "#111932",
                     }
                 }
             }
@@ -33,12 +34,11 @@
 
 </head>
 
-<body class="bg-gray-100 flex items-center justify-center h-screen" 
-    style="background-image: url('{{ asset('img/fondo4.jpg') }}'); background-position: center; background-size: cover;">
+<body class="pulso-housekeeping-page bg-gray-100 flex items-center justify-center h-screen">
 
-    <div class="bg-white shadow-lg rounded-xl p-8 w-full max-w-md">
+    <div class="pulso-housekeeping-card bg-white p-8 w-full max-w-md">
         <div class="flex justify-center">
-            <img src="{{ asset('img/Logo_HotelHub_tr.png') }}" alt="Hotel Hub Logo" class="w-70">
+            <img src="{{ asset('img/pulso-logo.jpg') }}" alt="Pulso+ · Gestiona salud" class="w-70">
         </div>
         
         <h2 class="text-xl font-bold text-primary text-center mt-4">Housekeeping - Iniciar Sesión</h2>

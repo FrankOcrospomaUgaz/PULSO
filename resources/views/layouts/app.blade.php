@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>Hotel Hub</title>
+    <title>{{ config('app.name', 'PULSO+') }}</title>
 
     <!-- Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -86,23 +86,19 @@
     <link rel="stylesheet" href="{{ asset('css/habitacion.css') }}"> --}}
 
     <link rel="stylesheet" href="{{ asset('css/app.css') }}">
-    <link rel="icon" type="image/png" href="{{ asset('img/logo_h.png') }}">
+    <link rel="stylesheet" href="{{ asset('css/pulso-brand.css') }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('img/pulso-favicon.jpg') }}">
 
 
 
 </head>
 
-<body class="font-sans antialiased" style="background-color: #e9eaf3;">
+<body class="font-sans antialiased" style="background-color: #f1f2f2;">
 
     <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
         <!-- No actualizar estos elementos -->
         @include('layouts.navigation')
-        <div id="loading-screen" style="display: none;">
-            <div class="loader">
-                <img class="img-loading" src="{{ asset('img/logo_h.png') }}" alt="Cargando...">
-                <span class="spinner"></span>
-            </div>
-        </div>
+        @include('components.brand-loader')
 
 
 

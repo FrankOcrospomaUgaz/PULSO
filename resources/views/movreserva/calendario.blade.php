@@ -758,8 +758,8 @@
 
             .today {
                 background: #ffffff !important;
-                border: 2px solid #26a69a;
-                color: #26a69a;
+                border: 2px solid #1e3d8a;
+                color: #1e3d8a;
             }
 
             .day-number {
@@ -808,8 +808,8 @@
 
             .calendar-cell-disponible:has(> a.btn-cargar-crud:hover) {
                 background-color: rgba(38, 166, 154, .12);
-                border-color: #26a69a;
-                box-shadow: inset 0 0 0 1px #26a69a, 0 3px 9px rgba(38, 166, 154, .2);
+                border-color: #1e3d8a;
+                box-shadow: inset 0 0 0 1px #1e3d8a, 0 3px 9px rgba(30, 61, 138, .2);
             }
 
             .calendar-cell-disponible > a.btn-cargar-crud:hover::after,
@@ -820,8 +820,8 @@
 
             .calendar-cell-disponible:has(> a.btn-cargar-crud:focus-visible) {
                 background-color: rgba(38, 166, 154, .12);
-                border-color: #26a69a;
-                box-shadow: inset 0 0 0 2px #26a69a;
+                border-color: #1e3d8a;
+                box-shadow: inset 0 0 0 2px #1e3d8a;
             }
 
             .timeline-container.calendar-expanded .room-card,

@@ -43,7 +43,7 @@
 
         .btn-revisar-secondary strong,
         .btn-revisar-secondary i {
-            color: #26a69a !important;
+            color: #1e3d8a !important;
         }
 
         /* OPERACIONES */

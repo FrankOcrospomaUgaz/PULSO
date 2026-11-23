@@ -2880,6 +2880,7 @@ function mostrarPantallaDeCarga() {
     if (loadingScreen && pantallaCargaContador === 1) {
         loadingScreen.style.display = 'flex';
         loadingScreen.style.opacity = '1';
+        loadingScreen.setAttribute('aria-hidden', 'false');
     }
 }
 
@@ -2899,6 +2900,7 @@ function ocultarPantallaDeCarga() {
         if (pantallaCargaContador === 0) {
             loadingScreen.style.display = 'none';
             loadingScreen.style.opacity = '1';
+            loadingScreen.setAttribute('aria-hidden', 'true');
         }
     }, 250);
 }
@@ -2911,6 +2913,7 @@ function forzarOcultarPantallaDeCarga() {
     }
     loadingScreen.style.transition = 'opacity 0.2s ease';
     loadingScreen.style.opacity = '0';
+    loadingScreen.setAttribute('aria-hidden', 'true');
     setTimeout(() => {
         loadingScreen.style.display = 'none';
         loadingScreen.style.opacity = '1';
@@ -13005,7 +13008,7 @@ function mostrarModalMantenimiento(numeroHabitacion) {
         text: `La ${habitacionLabel} esta en mantenimiento y no se pueden hacer reservas en este momento.`,
         icon: 'info',
         confirmButtonText: 'Entendido',
-        confirmButtonColor: '#26a69a',
+        confirmButtonColor: '#1e3d8a',
         customClass: {
             popup: 'rounded-swal'
         }

@@ -156,7 +156,7 @@
         }
 
         a {
-            color: #26a69a;
+            color: #1e3d8a;
             text-decoration: none;
             -webkit-tap-highlight-color: transparent;
         }
