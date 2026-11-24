@@ -8480,13 +8480,15 @@ function inicializarModal() {
 
                 // Inicializar Chips
                 var chipsElement = document.querySelector('#chips-opciones');
-                M.Chips.init(chipsElement, {
-                    data: chipsData,
-                    placeholder: '+Opción',
-                    secondaryPlaceholder: 'Añadir más',
-                    onChipAdd: actualizarOpcionesHidden,
-                    onChipDelete: actualizarOpcionesHidden
-                });
+                if (chipsElement) {
+                    M.Chips.init(chipsElement, {
+                        data: chipsData,
+                        placeholder: '+Opción',
+                        secondaryPlaceholder: 'Añadir más',
+                        onChipAdd: actualizarOpcionesHidden,
+                        onChipDelete: actualizarOpcionesHidden
+                    });
+                }
                 function actualizarOpcionesHidden(chipInstance) {
                     var chipsInstance = M.Chips.getInstance(document.querySelector('#chips-opciones'));
                     if (!chipsInstance) return;

@@ -58,7 +58,9 @@ class ClinicaController extends Controller
                 foreach ($type === 'servicios-clinicos' ? ['nombre', 'descripcion'] : ['nombres', 'apellidos', 'numero_documento', 'telefono', 'email'] as $column) $q->orWhere($column, 'ilike', "%{$search}%");
             });
         }
-        $rows = $query->latest('id')->paginate(20)->withQueryString();
+        $perPage = (int) $request->query('perPage', 10);
+        if (!in_array($perPage, [10, 25, 50, 100], true)) $perPage = 10;
+        $rows = $query->latest('id')->paginate($perPage)->withQueryString();
         return view('clinica.index', compact('rows', 'title', 'type', 'search'));
     }
 
@@ -85,6 +87,9 @@ class ClinicaController extends Controller
         }
         if (in_array($type, ['profesionales', 'servicios-clinicos'], true)) $data['activo'] = $request->boolean('activo');
         $model::create($data + ['sucursal_id' => $this->sucursal($request)]);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => "$title registrado correctamente.", 'redirect_url' => route($route . '.index')]);
+        }
         return redirect()->route($route . '.index')->with('success', "$title registrado correctamente.");
     }
 
@@ -115,6 +120,9 @@ class ClinicaController extends Controller
         }
         if (in_array($type, ['profesionales', 'servicios-clinicos'], true)) $data['activo'] = $request->boolean('activo');
         $row->update($data);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => "$title actualizado correctamente.", 'redirect_url' => route($route . '.index')]);
+        }
         return redirect()->route($route . '.index')->with('success', "$title actualizado correctamente.");
     }
 
