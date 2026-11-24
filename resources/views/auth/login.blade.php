@@ -22,19 +22,14 @@
             </a>
 
             <div class="pulso-login-copy">
-                <p class="pulso-login-eyebrow">Tecnología para cuidar mejor</p>
-                <h1>Gestionar salud importa.<br><span>Hacerlo simple, también.</span></h1>
-                <p>Una plataforma para que los equipos de salud organicen su operación y dediquen más energía a las personas.</p>
-                <ul class="pulso-login-points">
-                    <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Procesos claros para todo tu equipo</span></li>
-                    <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Información conectada en un solo lugar</span></li>
-                    <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Gestión pensada para empresas de salud</span></li>
-                </ul>
+                <p class="pulso-login-eyebrow">Plataforma de gestión de salud</p>
+                <h1>El cuidado de la salud, <span>mejor organizado.</span></h1>
+                <p>Agenda, atención y operación clínica en un mismo espacio.</p>
             </div>
 
             <div class="pulso-login-brand-footer">
-                <span>© {{ date('Y') }} Pulso+. Todos los derechos reservados.</span>
-                <span><i class="fa-solid fa-heart-pulse" aria-hidden="true"></i> Salud que avanza</span>
+                <span>© {{ date('Y') }} PULSO+. Todos los derechos reservados.</span>
+                <span>Gestión de salud</span>
             </div>
         </section>
 
@@ -44,9 +39,9 @@
                     <img src="{{ asset('img/pulso-logo.jpg') }}" alt="Pulso+ · Gestiona salud" width="684" height="296">
                 </a>
 
-                <p class="pulso-login-eyebrow">Acceso a la plataforma</p>
-                <h2>Bienvenido de vuelta</h2>
-                <p class="pulso-login-intro">Ingresa con tus credenciales para continuar en tu espacio de trabajo.</p>
+                <p class="pulso-login-eyebrow">Acceso seguro</p>
+                <h2>Iniciar sesión</h2>
+                <p class="pulso-login-intro">Ingresa tus credenciales para continuar.</p>
 
                 <form id="login-form" method="POST" action="{{ route('login') }}" novalidate>
                     @csrf
@@ -85,14 +80,13 @@
                     </div>
 
                     <button class="pulso-login-submit" id="login-button" type="submit">
-                        <span>Iniciar sesión</span>
-                        <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                        <span>Acceder</span>
                     </button>
                 </form>
 
                 <p class="pulso-login-footnote">
                     <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                    <span>Tu acceso es personal y protegido. Si necesitas ayuda, comunícate con el administrador de tu organización.</span>
+                    <span>Acceso exclusivo para usuarios autorizados. Si necesitas ayuda, contacta al administrador de tu organización.</span>
                 </p>
             </div>
         </section>

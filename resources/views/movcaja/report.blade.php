@@ -19,7 +19,7 @@
                                         <select id="caja_id" name="caja_id">
                                             @foreach ($cajas as $caja)
     <option value="{{ $caja->id }}"
-    {{ old('caja_id') == $caja->id ? 'selected' : '' }}>{{ $caja->numero }}
+    {{ request('caja_id', $caja_id) == $caja->id ? 'selected' : '' }}>{{ $caja->numero }}
     </option>
                                             @endforeach
                                         </select>
@@ -127,8 +127,7 @@
                                                 </option>
                                                 <option value="50" {{ request('perPage') == 50 ? 'selected' : '' }}>50
                                                 </option>
-                                                <option value="1000" {{ request('perPage') == 1000 ? 'selected' : '' }}>1000
-                                                </option>
+                                                <option value="100" {{ request('perPage', 10) == 100 ? 'selected' : '' }}>100</option>
                                             </select>
                                         </div>
                                     </div>

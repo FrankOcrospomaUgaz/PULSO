@@ -158,7 +158,9 @@ Route::middleware(['auth', 'sucursal.active'])->group(function () {
     Route::resource('contrato', App\Http\Controllers\ContratoController::class);
 Route::resource('tipoambiente', App\Http\Controllers\TipoambienteController::class);
     Route::resource('stockproducto', App\Http\Controllers\StockproductoController::class);
-    Route::resource('kardex', App\Http\Controllers\KardexController::class);
+    Route::resource('kardex', App\Http\Controllers\KardexController::class)->only(['index', 'show']);
+    Route::get('kardex/exportar/pdf', [App\Http\Controllers\KardexController::class, 'exportarPdf'])->name('kardex.exportarPdf');
+    Route::get('kardex/exportar/csv', [App\Http\Controllers\KardexController::class, 'exportarCsv'])->name('kardex.exportarCsv');
     Route::resource('facturador', App\Http\Controllers\FacturadorController::class);
     Route::resource('persona', App\Http\Controllers\PersonaController::class);
     Route::resource('rel_turnocaja', App\Http\Controllers\RelTurnocajaController::class);
@@ -250,6 +252,8 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
 
     Route::get('solicitudcancell_facturas', [App\Http\Controllers\SolicitudController::class, 'modalcancell_facturas'])->name('comprobante.cancell_facturas');
     Route::post('solicitud/cancellfacturas', [App\Http\Controllers\SolicitudController::class, 'cancell_facturas'])->name('cancell_facturas.store');
+    Route::get('solicitud/{id}/nota-credito', [App\Http\Controllers\SolicitudController::class, 'crearNotaCredito'])->whereNumber('id')->name('solicitud.notaCredito.create');
+    Route::post('solicitud/{id}/nota-credito', [App\Http\Controllers\SolicitudController::class, 'guardarNotaCredito'])->whereNumber('id')->name('solicitud.notaCredito.store');
 
     Route::get('solicitud_anuladas_boleta_detalle/{id}', [App\Http\Controllers\SolicitudController::class, 'anulacion_boleta_detalle'])->name('verBoletas');
     Route::get('solicitud_anuladas_factura_detalle/{id}', [App\Http\Controllers\SolicitudController::class, 'anulacion_factura_detalle'])->name('verFacturas');
@@ -314,8 +318,31 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('/habitacion/reservar/{id}', [App\Http\Controllers\MovhabitacionController::class, 'reservar'])->name('habitacion.reservar');
     Route::get('/habitacion/mantenimiento/{id}/{opcion?}', [App\Http\Controllers\MovhabitacionController::class, 'mantenimiento'])->name('habitacion.mantenimiento');
     Route::get('/calendario/reservas/', [App\Http\Controllers\MovhabitacionController::class, 'calendario'])->name('calendarioreservas.index');
-    // Compatibility alias used by menu actions stored in existing databases.
-    Route::get('/calendario/citas/', [App\Http\Controllers\MovhabitacionController::class, 'calendario'])->name('calendario-citas.index');
+    // Clinical ERP workflows backed by the existing paciente/profesional/servicio/cita tables.
+    foreach (['pacientes' => 'pacientes', 'profesionales' => 'profesionales', 'servicios-clinicos' => 'servicios-clinicos'] as $path => $type) {
+        $controller = App\Http\Controllers\ClinicaController::class;
+        Route::get($path, [$controller, 'index'])->defaults('type', $type)->name($type.'.index');
+        Route::get($path.'/create', [$controller, 'create'])->defaults('type', $type)->name($type.'.create');
+        Route::post($path, [$controller, 'store'])->defaults('type', $type)->name($type.'.store');
+        Route::get($path.'/{id}/edit', [$controller, 'edit'])->defaults('type', $type)->whereNumber('id')->name($type.'.edit');
+        Route::put($path.'/{id}', [$controller, 'update'])->defaults('type', $type)->whereNumber('id')->name($type.'.update');
+        Route::delete($path.'/{id}', [$controller, 'destroy'])->defaults('type', $type)->whereNumber('id')->name($type.'.destroy');
+    }
+    Route::get('/citas', [App\Http\Controllers\ClinicaController::class, 'citas'])->name('citas.index');
+    Route::get('/citas/disponibilidad', [App\Http\Controllers\ClinicaController::class, 'disponibilidad'])->name('citas.disponibilidad');
+    Route::post('/citas', [App\Http\Controllers\ClinicaController::class, 'reservar'])->name('citas.store');
+    Route::patch('/citas/{id}/estado', [App\Http\Controllers\ClinicaController::class, 'estado'])->whereNumber('id')->name('citas.estado');
+    Route::get('/horarios-clinicos', [App\Http\Controllers\ClinicaController::class, 'horarios'])->name('horarios-clinicos.index');
+    Route::post('/horarios-clinicos', [App\Http\Controllers\ClinicaController::class, 'guardarHorario'])->name('horarios-clinicos.store');
+    Route::delete('/horarios-clinicos/{id}', [App\Http\Controllers\ClinicaController::class, 'eliminarHorario'])->whereNumber('id')->name('horarios-clinicos.destroy');
+    Route::get('/avisos-clinicos', [App\Http\Controllers\ClinicaController::class, 'avisos'])->name('avisos-clinicos.index');
+    Route::post('/avisos-clinicos/{id}/resolver', [App\Http\Controllers\ClinicaController::class, 'resolverAviso'])->whereNumber('id')->name('avisos-clinicos.resolver');
+    Route::post('/avisos-clinicos/{id}/reenviar', [App\Http\Controllers\ClinicaController::class, 'reenviarAviso'])->whereNumber('id')->name('avisos-clinicos.reenviar');
+    Route::get('/farmacia/reportes', [App\Http\Controllers\FarmaciaReportController::class, 'index'])->name('farmacia.reportes.index');
+    Route::get('/farmacia/utilidades', [App\Http\Controllers\FarmaciaReportController::class, 'utilidades'])->name('farmacia.utilidades.index');
+    Route::get('/calendario/citas', [App\Http\Controllers\ClinicaController::class, 'calendario'])->name('calendario-citas.index');
+    Route::get('/calendario/citas/eventos', [App\Http\Controllers\ClinicaController::class, 'eventosCalendario'])->name('calendario-citas.eventos');
+    Route::get('/report/citas', [App\Http\Controllers\ClinicaController::class, 'reporte'])->name('report.citas.index');
     Route::get('/verificar-estado-habitacion/{habitacionId}', [App\Http\Controllers\HabitacionController::class, 'verificarEstadoHabitacion']);
 
 

@@ -53,6 +53,7 @@ class Kardex extends Model
 
 
     protected $table = 'kardex';
+    protected $casts = ['fecha' => 'datetime'];
 
     protected $perPage = 10;
 
@@ -138,7 +139,7 @@ class Kardex extends Model
     
     public function getSituacionAttribute($value)
     {
-        return $value === 'E' ? 'Activado' : 'Desactivado';
+        return in_array($value, ['A', 'E'], true) ? 'Activado' : 'Desactivado';
     }
 
 }

@@ -32,11 +32,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\FacturadorController;
 use App\Helpers\NumeroTexto;
 use App\Services\CorrelativoService;
+use App\Services\InventarioVentaService;
 use App\Models\MovhabitacionHabitacion;
 use App\Models\Pasarelapago;
 use App\Models\RelOperacionsucursal;
@@ -506,6 +508,7 @@ class MovventumController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless((int) Auth::user()->persona?->sucursal_id === (int) $request->input('sucursal_id'), 403, 'La venta no corresponde a tu sucursal.');
         DB::beginTransaction();
 
         try {
@@ -653,7 +656,7 @@ class MovventumController extends Controller
                 $igv_id = $relProductoSucursal ? $relProductoSucursal->igv_id : null;
                 $igvClase = Igv::find($igv_id);
                 $unidad = Unidad::where('descripcion', $detalle['unidad'])->first();
-                DetMovventum::create([
+                $detalleVenta = DetMovventum::create([
                     'movventa_id' => $movventa->id,
                     'tipo_detalle' => $request->tipo_detalle,
                     'codigo' => $detalle['codigo'],
@@ -675,6 +678,7 @@ class MovventumController extends Controller
                     'complementos' => json_encode([]),
                     'sucursal_id' => $request->sucursal_id,
                 ]);
+                app(InventarioVentaService::class)->registrarSalida($detalle, $detalleVenta, $movventa, $movimiento, Auth::user());
             }
 
             $movimientoCaja = Movimiento::create([
@@ -847,6 +851,9 @@ class MovventumController extends Controller
                     'redirect_url' => route('movventa.index'),
                 ]);
             }
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -1212,6 +1219,9 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
     public function update(Request $request, $id)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && (int) Movventum::whereKey($id)->value('sucursal_id') === $userBranch
+            && (int) $request->input('sucursal_id') === $userBranch, 403, 'La venta no corresponde a tu sucursal.');
         DB::beginTransaction();
 
         try {
@@ -1245,6 +1255,10 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             // Obtener los registros existentes
             $movventa = Movventum::with(['movimiento', 'detMovventas'])->findOrFail($id);
             $movimiento = $movventa->movimiento;
+            if ($movimiento->getRawOriginal('situacion') !== 'A') {
+                throw ValidationException::withMessages(['venta' => 'No se puede editar una venta anulada.']);
+            }
+            $inventarioGestionado = app(InventarioVentaService::class)->revertirSalida($movventa, $movimiento);
 
             // Calcular totales de los detalles primero (los precios en frontend incluyen IGV)
             $detalles = json_decode($request->detalles_json, true) ?? [];
@@ -1341,7 +1355,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
                 $igvClase = $igvId ? Igv::find($igvId) : null;
 
-                DetMovventum::create([
+                $detalleVenta = DetMovventum::create([
                     'movventa_id' => $movventa->id,
                     'tipo_detalle' => $request->tipo_detalle,
                     'unidad_id' => $unidad ? $unidad->id : null,
@@ -1361,17 +1375,9 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                     'opc_categoria' => json_encode($detalle['opc_categoria'] ?? []),
                     'sucursal_id' => $request->sucursal_id,
                 ]);
-
-
-                // Actualizar stock del producto
-                // $stockProducto = Stockproducto::where('producto_id', $detalle['producto_id'])
-                //     ->where('sucursal_id', $request->sucursal_id)
-                //     ->first();
-
-                // if ($stockProducto) {
-                //     $stockProducto->stockbase += $detalle['cantidad'];
-                //     $stockProducto->save();
-                // }
+                if ($inventarioGestionado) {
+                    app(InventarioVentaService::class)->registrarSalida($detalle, $detalleVenta, $movventa, $movimiento, Auth::user());
+                }
             }
 
             // Actualizar Movcaja y Detalles
@@ -1468,6 +1474,9 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'message' => 'Venta actualizada con éxito.',
                 'redirect_url' => route('movventa.index')
             ]);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -1500,12 +1509,17 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
     }
     public function anular($id)
     {
+        $branch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branch, 403);
         DB::beginTransaction();
 
         try {
             // Obtener la venta y su movimiento
-            $movventa = Movventum::with('detMovventas', 'movcaja')->findOrFail($id);
+            $movventa = Movventum::with('detMovventas', 'movcaja')->where('sucursal_id', $branch)->findOrFail($id);
             $movimientoVenta = Movimiento::findOrFail($movventa->movimiento_id);
+            if ($movimientoVenta->getRawOriginal('situacion') !== 'A') {
+                throw ValidationException::withMessages(['venta' => 'La venta ya fue anulada.']);
+            }
             $movimientoCaja = Movimiento::findOrFail($movventa->movcaja->movimiento_id);
             $movhabitacion = Movhabitacion::find($movventa->movhabitacion_id);
             $detMovventaIds = $movventa->detMovventas->pluck('id')->filter()->values();
@@ -1562,25 +1576,8 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'motivo' => request('motivo') ?? 'Anulación de venta',
             ]);
 
-            // Revertir stock y actualizar Kardex
-            foreach ($movventa->detMovventas as $detalle) {
-                if ($esPagoProductosAlojamiento) {
-                    continue;
-                }
-
-                $stockProducto = Stockproducto::where('producto_id', $detalle->producto_id)
-                    ->where('sucursal_id', $movventa->sucursal_id)
-                    ->first();
-
-                if ($stockProducto) {
-                    $stockProducto->stockbase += $detalle->cantidad;
-                    $stockProducto->save();
-                }
-
-                Kardex::where('producto_id', $detalle->producto_id)
-                    ->where('movimiento_id', $movimientoVenta->id)
-                    ->update(['situacion' => 'A']);
-            }
+            // Restaurar solo salidas que existan en el kárdex; ventas históricas sin salida quedan intactas.
+            if (!$esPagoProductosAlojamiento) app(InventarioVentaService::class)->revertirSalida($movventa, $movimientoVenta);
 
             // Crear nuevo movimiento duplicando la info del anterior
             $tipodocumento = $movimientoVenta->tipodocumento;
@@ -1640,6 +1637,9 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'message' => 'Movimiento de venta anulado correctamente.',
                 'redirect_url' => route('movventa.index')
             ]);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
 

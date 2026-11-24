@@ -15441,7 +15441,8 @@ function sincronizarDetallesCompraDesdeTabla() {
             precio_unitario: precioUnitario,
             precio_compra: precioUnitario,
             total: cantidad * precioUnitario,
-            notas: celdas[7]?.textContent?.trim() || '',
+            fecha_vencimiento: fila.querySelector('.fecha-vencimiento')?.value || '',
+            notas: celdas[8]?.textContent?.trim() || '',
         });
     });
 
@@ -15531,6 +15532,7 @@ function agregarProductoATablaCompra(producto) {
             <td><span class="inpt-cantidad-mc igv">${igvLinea.toFixed(2)}</span></td>
             <td><span class="inpt-cantidad-mc precio-unitario">${precioUnitario.toFixed(2)}</span></td>
             <td><span class="inpt-cantidad-mc precio-total">${importe.toFixed(2)}</span></td>
+            <td><input type="date" class="fecha-vencimiento" value="${producto.fecha_vencimiento || ''}" onclick="event.stopPropagation();" onchange="sincronizarDetallesCompraDesdeTabla();"></td>
             <td></td>
             <td>
                 <button type="button" class="btn btn-floating btn-small red white-text tooltipped" data-tooltip="Quitar"

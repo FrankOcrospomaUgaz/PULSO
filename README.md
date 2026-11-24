@@ -1,5 +1,19 @@
 # PULSO
 
+## Facturación electrónica
+
+Los WSDL de boletas, facturas, notas de crédito, consulta/sincronización, resumen de boletas y comunicación de bajas se configuran con `FACTURACION_*_WSDL` en el entorno. Los valores iniciales conservan el proveedor existente; si el proveedor ofrece TLS o cambia su URL, configure la URL vigente sin modificar controladores. Las notas de crédito se pueden emitir sobre comprobantes aceptados por el total, con los motivos 01, 02 y 06 del catálogo SUNAT; cada nota guarda su referencia al comprobante afectado y queda disponible para consultar estado y descargar XML/CDR.
+
+## Operación clínica PULSO+
+
+La agenda clínica vive en `citas`, con catálogos de `pacientes`, `profesionales` y `servicios-clinicos`. Configure los turnos semanales en **Horarios profesionales** antes de reservar; las citas deben caber dentro de un turno y no cruzarse con otra cita del paciente o del profesional. La agenda, calendario y reportes usan la sucursal del usuario autenticado.
+
+Los avisos por WhatsApp requieren consentimiento registrado en la ficha del paciente (o tutor), un número de WhatsApp Cloud API y plantillas aprobadas en español. Configure `META_AUTH_TOKEN`, `META_WHATSAPP_PHONE_NUMBER_ID`, `META_TEMPLATE_RECORDATORIO_CITA` y `META_TEMPLATE_CUMPLEMES`. La plantilla de cita recibe, en este orden: contacto, servicio, hora, profesional y sede. La plantilla de cumple-mes recibe: tutor/contacto, nombre del bebé y meses cumplidos. El envío automático está apagado por defecto; actívelo solo después de verificar las plantillas con `CLINICA_WHATSAPP_AUTOMATICO=true`.
+
+El planificador de Laravel debe ejecutarse cada minuto en el servidor para enviar recordatorios del día (se revisan cada 30 minutos entre 07:00 y 21:00). `php artisan clinica:avisos` muestra solo un conteo de vista previa y no crea envíos ni contacta a nadie.
+
+Las migraciones `2026_11_23_000001_create_clinical_schedules_and_notifications` y `2026_11_23_000002_add_clinical_notification_consent` añaden horarios, bitácora idempotente de avisos y consentimiento explícito; no alteran registros clínicos existentes. El reporte de vencimientos usa la fecha producto-sucursal que ofrece el esquema actual; no representa lotes independientes.
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">

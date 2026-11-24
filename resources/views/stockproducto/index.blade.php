@@ -76,6 +76,7 @@
                         <!-- Botones de exportación debajo alineados a la derecha -->
                         <div class="col s12 right-align">
                             <div class="input-field" style="display: inline-flex; gap: 10px; flex-wrap: wrap;">
+                                <a class="btn blue-grey" href="{{ route('farmacia.reportes.index') }}"><i class="fa-solid fa-triangle-exclamation left"></i>Alertas / inventario</a>
                                 <button class="btn teal tooltipped btn-buscar" id="btn-MovVenta" data-tooltip="Buscar"
                                     type="button" onclick="filterStock()">
                                     <i class="fa-solid fa-magnifying-glass white-text"></i>

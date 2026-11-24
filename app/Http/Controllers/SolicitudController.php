@@ -42,7 +42,9 @@ class SolicitudController extends Controller
 {
     public function downloadXmlById($id)
     {
-        $comprobante = Solicitud::findOrFail($id);
+        $branchId = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branchId, 403);
+        $comprobante = Solicitud::where('sucursal_id', $branchId)->findOrFail($id);
 
         $this->asegurarPublicNameComprobante($comprobante);
 
@@ -51,7 +53,9 @@ class SolicitudController extends Controller
 
     public function downloadCdrById($id)
     {
-        $comprobante = Solicitud::findOrFail($id);
+        $branchId = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branchId, 403);
+        $comprobante = Solicitud::where('sucursal_id', $branchId)->findOrFail($id);
 
         return $this->descargarCdrDesdeSolicitud($comprobante, true);
     }
@@ -204,7 +208,7 @@ class SolicitudController extends Controller
             abort(404, 'Facturador no configurado para descargar el CDR');
         }
 
-        $client = new nusoap_client('http://157.245.85.164/facturacion/wsdl/wsdl_comprobantes.php');
+        $client = new nusoap_client(config('services.facturacion.comprobantes_wsdl'));
         $result = $client->call('descargarCDR', [
             'ruc' => $facturador->username_wsdl,
             'password' => $facturador->password_wsdl,
@@ -283,7 +287,7 @@ class SolicitudController extends Controller
 
         // Query base
         $query = Solicitud::where('sucursal_id', $persona->sucursal_id)
-            ->whereNotIn('tipo_documento', ['E', 'A', 'N']); // excluir anulados
+            ->whereNotIn('tipo_documento', ['E', 'A']); // excluir documentos de baja
 
         // Búsqueda
         if ($search) {
@@ -635,6 +639,174 @@ class SolicitudController extends Controller
         $solicitud = Solicitud::find($id);
         return view('solicitud.modalcorreo', compact('solicitud'));
     }
+    public function crearNotaCredito(int $id)
+    {
+        $branchId = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branchId, 403);
+        $comprobante = Solicitud::where('sucursal_id', $branchId)
+            ->whereIn('tipo_documento', ['B', 'F'])->whereIn('estado', ['M', 'T'])->findOrFail($id);
+        abort_unless($comprobante->movimiento && $comprobante->movimiento->getRawOriginal('situacion') === 'A', 422, 'La venta asociada está anulada.');
+        abort_unless(!$this->tieneNotaCreditoCompleta($comprobante), 409, 'Este comprobante ya tiene una nota de crédito total registrada.');
+
+        $tiposNota = [
+            '01' => 'Anulación de la operación',
+            '06' => 'Devolución total',
+        ];
+
+        return view('solicitud.nota-credito', compact('comprobante', 'tiposNota'));
+    }
+
+    public function guardarNotaCredito(Request $request, int $id)
+    {
+        $data = $request->validate([
+            'tipo_nota' => 'required|in:01,06',
+            'motivo' => 'required|string|min:5|max:500',
+        ]);
+        $branchId = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branchId, 403);
+
+        DB::beginTransaction();
+        try {
+            $comprobante = Solicitud::where('sucursal_id', $branchId)->whereIn('tipo_documento', ['B', 'F'])
+                ->whereIn('estado', ['M', 'T'])->lockForUpdate()->findOrFail($id);
+            if (!$comprobante->movimiento || $comprobante->movimiento->getRawOriginal('situacion') !== 'A') {
+                DB::rollBack();
+                return back()->withErrors(['comprobante' => 'La venta asociada está anulada.']);
+            }
+            if ($this->tieneNotaCreditoCompleta($comprobante)) {
+                DB::rollBack();
+                return back()->withErrors(['comprobante' => 'Este comprobante ya tiene una nota de crédito total registrada.']);
+            }
+
+            $facturador = json_decode((string) $comprobante->json_facturador, true) ?: [];
+            if (empty($facturador['username_wsdl']) || empty($facturador['password_wsdl'])) {
+                DB::rollBack();
+                return back()->withErrors(['facturador' => 'El facturador de este comprobante no tiene credenciales WSDL.']);
+            }
+            $datosOriginales = json_decode((string) $comprobante->data, true);
+            if (!is_array($datosOriginales) || empty($datosOriginales['detalles'])) {
+                DB::rollBack();
+                return back()->withErrors(['comprobante' => 'No se encontraron los datos y detalles originales para emitir la nota.']);
+            }
+
+            // Serializa el correlativo de notas por facturador y conserva la serie del documento afectado.
+            $facturadorDb = Facturador::whereKey($comprobante->facturador_id)->where('sucursal_id', $branchId)->lockForUpdate()->first();
+            if (!$facturadorDb) {
+                DB::rollBack();
+                return back()->withErrors(['facturador' => 'No se encontró el facturador de la sucursal.']);
+            }
+            $correlativo = ((int) Solicitud::where('sucursal_id', $branchId)->where('tipo_documento', 'N')
+                ->where('serie', $comprobante->serie)->max('correlativo')) + 1;
+            $serieNotaCompleta = $comprobante->tipo_documento . $comprobante->serie;
+            $numeroNota = $serieNotaCompleta . '-' . str_pad((string) $correlativo, 8, '0', STR_PAD_LEFT);
+            $fechaEmision = now();
+            $tipoSunatAfectado = $comprobante->tipo_documento === 'F' ? '01' : '03';
+
+            $payload = $datosOriginales;
+            unset($payload['numerofactura'], $payload['numeroboleta']);
+            $payload['numeronotacredito'] = $numeroNota;
+            $payload['fechaemision'] = $fechaEmision->toDateString();
+            $payload['horaemision'] = $fechaEmision->format('H:i:s');
+            $payload['tipo_nota'] = $data['tipo_nota'];
+            $payload['motivo'] = trim($data['motivo']);
+            $payload['documento_afectado'] = [
+                'solicitud_id' => $comprobante->id,
+                'tipo_documento' => $tipoSunatAfectado,
+                'tipo_documento_pulso' => $comprobante->tipo_documento,
+                'serie' => $comprobante->serie,
+                'correlativo' => (string) $comprobante->correlativo,
+                'numero' => $comprobante->serie . '-' . str_pad((string) $comprobante->correlativo, 8, '0', STR_PAD_LEFT),
+            ];
+            $payload['total'] = (float) $comprobante->total;
+
+            $personaJson = json_decode((string) $comprobante->json_persona, true) ?: [];
+            $requestData = [
+                'token' => '',
+                'serienotacredito' => $comprobante->serie,
+                'serienotacredito_completa' => $serieNotaCompleta,
+                'correlativonotacredito' => $correlativo,
+                'doc' => $datosOriginales['ruc'] ?? $datosOriginales['dni'] ?? '',
+                'nombre' => $datosOriginales['usuario'] ?? '',
+                'direccion' => $personaJson['direccion'] ?? '',
+                'total' => (float) $comprobante->total,
+                'comprobante' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ];
+
+            $nota = Solicitud::create([
+                'tipo_solicitud' => 'sendBill',
+                'data' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'fecha' => $fechaEmision,
+                'estado' => 'E',
+                'total' => $comprobante->total,
+                'moneda' => $comprobante->moneda,
+                'tipo_documento' => 'N',
+                'serie' => $comprobante->serie,
+                'correlativo' => $correlativo,
+                'persona_id' => $comprobante->persona_id,
+                'json_persona' => $comprobante->json_persona,
+                'sucursal_id' => $branchId,
+                'json_sucursal' => $comprobante->json_sucursal,
+                'facturador_id' => $comprobante->facturador_id,
+                'json_facturador' => $comprobante->json_facturador,
+                'movimiento_id' => $comprobante->movimiento_id,
+            ]);
+
+            $client = new nusoap_client(config('services.facturacion.nota_credito_wsdl'));
+            $result = $client->call('enviarNotaCredito', [
+                'ruc' => $facturador['username_wsdl'],
+                'password' => $facturador['password_wsdl'],
+                'json' => json_encode($requestData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]);
+            if (!$client->fault && $client->getError()) {
+                // Un error de transporte no confirma si el proveedor recibió el documento.
+                // Se conserva como pendiente para que no se emita otro crédito duplicado.
+                $nota->update(['estado' => 'R', 'error_text' => mb_substr('No se pudo confirmar la respuesta del facturador. Verifica y sincroniza antes de volver a emitir. '.$client->getError(), 0, 10000)]);
+                DB::commit();
+                return back()->withErrors(['facturador' => 'El facturador no confirmó la recepción. La solicitud quedó pendiente; sincroniza o consulta al proveedor antes de volver a emitir.']);
+            }
+            $decoded = is_string($result) ? json_decode($result, true) : null;
+
+            if ($client->fault || $client->getError() || !is_array($decoded) || (string) ($decoded['code'] ?? '') !== '0') {
+                $error = $client->fault
+                    ? 'El servicio del facturador rechazó la solicitud SOAP.'
+                    : ($client->getError() ?: ($decoded['mensaje'] ?? 'Respuesta no reconocida del servicio de notas de crédito.'));
+                $nota->update(['estado' => 'E', 'error_text' => mb_substr((string) $error, 0, 10000)]);
+                DB::commit();
+                return back()->withErrors(['facturador' => $error])->withInput();
+            }
+
+            if (!empty($decoded['fileZIPBASE64']) && !empty($decoded['nombre_documento'])) {
+                $zip = base64_decode($decoded['fileZIPBASE64'], true);
+                if ($zip !== false) {
+                    Storage::put('ficheros/sucursal_' . $branchId . '/' . $decoded['nombre_documento'] . '.zip', $zip);
+                }
+            }
+            $nota->update([
+                'estado' => 'R',
+                'fechaenvio' => now(),
+                'solicitud_facturador_id' => $decoded['id_solicitud'] ?? null,
+                'nombre' => $decoded['nombre_documento'] ?? null,
+                'error_text' => null,
+            ]);
+            DB::commit();
+
+            return redirect()->route('solicitud.index')->with('success', $decoded['mensaje'] ?? 'Nota de crédito enviada al facturador.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Error al emitir nota de crédito', ['solicitud_id' => $id, 'error' => $e->getMessage()]);
+            return back()->withErrors(['facturador' => 'No se pudo emitir la nota de crédito: ' . $e->getMessage()])->withInput();
+        }
+    }
+
+    private function tieneNotaCreditoCompleta(Solicitud $comprobante): bool
+    {
+        return Solicitud::where('sucursal_id', $comprobante->sucursal_id)
+            ->where('tipo_documento', 'N')
+            ->whereRaw("data->'documento_afectado'->>'solicitud_id' = ?", [(string) $comprobante->id])
+            ->whereIn('estado', ['R', 'M', 'T'])
+            ->exists();
+    }
+
     public function modalcancell_boletas()
     {
         $sucursal_id = Auth::user()->persona->sucursal_id;
@@ -761,7 +933,7 @@ class SolicitudController extends Controller
                     'json' => $json_enviar,
                 ];
 
-                $url = "http://157.245.85.164/facturacion/wsdl/wsdl_comunicacionbajas.php";
+                $url = config('services.facturacion.bajas_wsdl');
 
                 // Enviar petición POST al WebService
                 $client = new \GuzzleHttp\Client();
@@ -1081,7 +1253,7 @@ class SolicitudController extends Controller
 
                     $comprobantes = [];
                     if ($datos_sincronizacion) {
-                        $url = "http://157.245.85.164/facturacion/wsdl/wsdl_comprobantes.php";
+                        $url = config('services.facturacion.comprobantes_wsdl');
                         $accion = 'descargar';
 
                         $client = new nusoap_client($url);
@@ -1405,8 +1577,8 @@ class SolicitudController extends Controller
                 // Dependiendo del tipo de documento, enviamos al WebService correspondiente
                 $tipo_documento = $data['numeroboleta'] ? 'B' : 'F'; // Verificar si es boleta o factura
                 $url = $tipo_documento == 'B'
-                    ? "http://157.245.85.164/facturacion/wsdl/wsdl_resumenboletas.php"
-                    : "http://157.245.85.164/facturacion/wsdl/wsdl_comunicacionbajas.php";
+                    ? config('services.facturacion.resumen_boletas_wsdl')
+                    : config('services.facturacion.bajas_wsdl');
 
                 // Datos de facturador y solicitud
                 $facturador = json_decode($solicitud->json_facturador);
@@ -1745,7 +1917,7 @@ public function desactivar($id)
                 $tipo_resumen = 'E';
                 $codigo_tipo = '03'; // Código SUNAT para boleta
                 $accion = 'enviarResumenBoletas';
-                $url = "http://157.245.85.164/facturacion/wsdl/wsdl_resumenboletas.php";
+                $url = config('services.facturacion.resumen_boletas_wsdl');
 
                 // Agrupar por facturador (username_wsdl + sucursal)
                 $resumenes_group = $grupo_ventas->groupBy(function ($s) {

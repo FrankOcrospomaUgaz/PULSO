@@ -16,6 +16,7 @@ use App\Models\Anulacion;
 use App\Models\Banco;
 use App\Models\Billeteradigital;
 use App\Models\DetMovventum;
+use App\Models\DetCuentaCobrarpagar;
 use App\Models\HistorialHabitacion;
 use App\Models\Kardex;
 use App\Models\Mediopago;
@@ -36,8 +37,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Barryvdh\Snappy\Facades\SnappyPdf as PDF;
 use Illuminate\Support\Collection;
+use App\Services\CuentaCobrarpagarService;
 
 class MovcajaController extends Controller
 {
@@ -302,7 +305,7 @@ class MovcajaController extends Controller
             })
             ->where('stockproducto.sucursal_id', $sucursal->id)
             ->whereNull('stockproducto.deleted_at')
-            ->whereRaw('stockproducto.stockbase <= COALESCE(rel_productosucursal.stockminimo, 0)')
+            ->whereRaw('COALESCE(rel_productosucursal.stockminimo, 0) > 0 AND stockproducto.stockbase <= rel_productosucursal.stockminimo')
             ->orderBy('stockproducto.stockbase')
             ->limit(10)
             ->get();
@@ -545,10 +548,13 @@ class MovcajaController extends Controller
         try {
             $user = Auth::user();
             $persona = Persona::find($user->persona_id);
-            $sucursal = Sucursal::find($persona->sucursal_id);
+            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+            $caja = Caja::whereKey($cajaId)->where('sucursal_id', $sucursal->id)->firstOrFail();
+            $cashMethodId = Mediopago::whereRaw('LOWER(descripcion) = ?', ['efectivo'])->value('id') ?? 1;
 
             // Obtener el último turno activo o cerrado para la caja
             $turnoCaja = RelTurnocaja::where('situacion', 'A') // Turno activo
+                ->where('sucursal_id', $sucursal->id)
                 ->whereHas('movcajainicio', function ($query) use ($cajaId) {
                     $query->where('caja_id', $cajaId);
                 })
@@ -563,9 +569,10 @@ class MovcajaController extends Controller
             }
 
             // Obtener movimientos con detalles
-            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago'])
+            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago', 'movventa', 'movimiento'])
                 ->where('id', '>=', $turnoCaja->movcajainicio_id) // Desde el inicio del turno
                 ->where('caja_id', $cajaId)
+                ->where('sucursal_id', $sucursal->id)
                 ->whereHas('movimiento', function ($query) {
                     $query->where('situacion', 'A'); // Filtrar movimientos con situación 'A'
                 })
@@ -576,7 +583,7 @@ class MovcajaController extends Controller
 
 
 
-            $detallesAgrupados = $movimientos->flatMap->detMovcaja->groupBy(function ($detalle) {
+            $detallesAgrupados = $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->groupBy(function ($detalle) {
                 $tipoConcepto = $detalle->movcaja->conceptopago->tipo;
                 $conceptoDescripcion = $detalle->movcaja->conceptopago->descripcion;
 
@@ -651,10 +658,10 @@ class MovcajaController extends Controller
                     return $movcaja->conceptopago && $movcaja->conceptopago->descripcion === 'Apertura de caja';
                 })->flatMap->detMovcaja->where('tipo', 'Pagado')->sum('monto'),
 
-                'efectivo' => $movimientos->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                'efectivo' => $movimientos->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
                 'egresos' => $movimientos->where('movimiento.tipodocumento_id', 8)->flatMap->detMovcaja->where('tipo', 'Pagado')->sum('monto'),
                 'egresos_efectivo' => $movimientos->where('movimiento.tipodocumento_id', 8)
-                    ->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                    ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
 
                 'ingresos' => $movimientos->filter(function ($movcaja) {
                     return $movcaja->movimiento->movimiento_id == null && $movcaja->movimiento->tipodocumento_id == 7 && $movcaja->conceptopago->descripcion !== 'Apertura de caja';
@@ -665,41 +672,29 @@ class MovcajaController extends Controller
                 })->flatMap->detMovcaja->where('tipo', 'Pagado')->sum('monto'),
 
                 'ventas_efectivo' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->conceptopago_id == 4;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                    return $movcaja->movventa && $movcaja->conceptopago_id == 4;
+                })->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
 
                 'tarjeta' => $movimientos->flatMap->detMovcaja->where('mediopago_id', 2)->where('tipo', 'Pagado')->sum('monto'),
 
                 'ingresos_efectivo' => $movimientos->filter(function ($movcaja) {
                     return $movcaja->movimiento->movimiento_id == null && $movcaja->movimiento->tipodocumento_id == 7;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                })->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
 
                 // Calcular efectivo en caja
                 'efectivo_caja' =>
                 $movimientos->filter(function ($movcaja) {
                     return $movcaja->movimiento->tipodocumento_id == 7;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
-                    + $movimientos->filter(function ($movcaja) {
-                        return $movcaja->movimiento->tipodocumento->tipomovimiento_id == 2 && $movcaja->conceptopago_id == 4;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
+                })->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto')
                     - $movimientos->filter(function ($movcaja) {
                         return $movcaja->movimiento->tipodocumento_id == 8;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                    })->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
 
                 'total' =>
-                $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movimiento->tipodocumento_id == 7;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
-                    + $movimientos->filter(function ($movcaja) {
-                        return $movcaja->movimiento->tipodocumento->tipomovimiento_id == 2 && $movcaja->conceptopago_id == 4;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
-                    - $movimientos->filter(function ($movcaja) {
-                        return $movcaja->movimiento->tipodocumento_id == 8;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
+                $movimientos->filter(fn($movcaja) => $movcaja->movimiento->tipodocumento_id == 7)
+                    ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto')
+                    - $movimientos->filter(fn($movcaja) => $movcaja->movimiento->tipodocumento_id == 8)
+                    ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto'),
             ];
 
 
@@ -712,7 +707,7 @@ class MovcajaController extends Controller
 
             $medio_pagos = Mediopago::where('situacion', true)->get();
             $conceptos_pago = Conceptopago::whereNotIn('id', [2])->get(); // Excluir el concepto 'Apertura'
-            $cajas = Caja::where('id', $cajaId)->get();
+            $cajas = collect([$caja]);
             // Obtener lista de monedas y billetes desde la BD
             $monedas = \App\Models\Dinero::where('tipo', 'MONEDA')
                 ->where('situacion', 'E')
@@ -747,6 +742,8 @@ class MovcajaController extends Controller
 
     public function storeCierre(Request $request, $cajaId)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && (int) $cajaId > 0 && (int) $request->input('caja_id') === (int) $cajaId, 403, 'La caja solicitada no corresponde al usuario.');
         DB::beginTransaction();
 
         try {
@@ -755,11 +752,18 @@ class MovcajaController extends Controller
                 'responsable_id' => 'required|exists:persona,id',
                 'moneda' => 'required|string|in:PEN,USD',
                 'total' => 'required|numeric|min:0',
+                'efectivo_real' => 'nullable|numeric|min:0',
+                'dinero_id' => 'nullable|array',
+                'dinero_id.*' => 'integer|exists:dinero,id',
+                'dinero_cantidad' => 'nullable|array',
+                'dinero_cantidad.*' => 'nullable|numeric|min:0',
                 'caja_id' => 'required|exists:caja,id',
+                'detalles_movimientos_json' => 'required|json',
                 'notas' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => $validator->errors()
@@ -771,8 +775,45 @@ class MovcajaController extends Controller
             $persona_sucursal = Persona::find($usuario->persona_id);
             $sucursal = Sucursal::find($persona_sucursal->sucursal_id);
             $responsable = Persona::find($request->responsable_id);
-            $caja = Caja::find($request->caja_id);
-            $turnoCaja = RelTurnocaja::conCajaActiva($cajaId)->firstOrFail();
+            $caja = Caja::whereKey($cajaId)->where('sucursal_id', $userBranch)->lockForUpdate()->firstOrFail();
+            $turnoCaja = RelTurnocaja::conCajaActiva($cajaId)->where('sucursal_id', $userBranch)->lockForUpdate()->firstOrFail();
+            if (!$responsable || (int) $responsable->sucursal_id !== $userBranch) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El responsable no pertenece a tu sucursal.'], 422);
+            }
+
+            // El total esperado se recalcula desde los movimientos pagados del turno.
+            // Nunca confiar en el campo readonly enviado por el navegador.
+            $cashMethodId = Mediopago::whereRaw('LOWER(descripcion) = ?', ['efectivo'])->value('id') ?? 1;
+            $movimientosTurno = Movcaja::with(['movimiento', 'detMovcaja'])
+                ->where('sucursal_id', $userBranch)
+                ->where('caja_id', $cajaId)
+                ->where('id', '>=', $turnoCaja->movcajainicio_id)
+                ->whereHas('movimiento', fn($q) => $q->where('situacion', 'A'))
+                ->get();
+            $ingresosEfectivo = $movimientosTurno
+                ->filter(fn($mov) => $mov->movimiento && (int) $mov->movimiento->tipodocumento_id === 7)
+                ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+            $egresosEfectivo = $movimientosTurno
+                ->filter(fn($mov) => $mov->movimiento && (int) $mov->movimiento->tipodocumento_id === 8)
+                ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+            $efectivoEsperado = round((float) $ingresosEfectivo - (float) $egresosEfectivo, 2);
+
+            $dineroIds = $request->input('dinero_id', []);
+            $cantidades = $request->input('dinero_cantidad', []);
+            $dineroConfig = \App\Models\Dinero::whereIn('id', $dineroIds)
+                ->where('situacion', 'E')
+                ->get(['id', 'valor'])
+                ->keyBy('id');
+            $efectivoContado = 0.0;
+            foreach ($dineroIds as $i => $dineroId) {
+                $cantidad = (float) ($cantidades[$i] ?? 0);
+                if ($cantidad > 0 && $dineroConfig->has((int) $dineroId)) {
+                    $efectivoContado += (float) $dineroConfig->get((int) $dineroId)->valor * $cantidad;
+                }
+            }
+            $efectivoContado = round($efectivoContado, 2);
+            $diferenciaCaja = round($efectivoContado - $efectivoEsperado, 2);
 
             $persona = $request->persona_id ? Persona::find($request->persona_id) : null;
 
@@ -786,7 +827,9 @@ class MovcajaController extends Controller
                 'responsable' => $responsable->nombres . ' ' . $responsable->apellidos,
                 'persona_id' => $request->persona_id,
                 'persona' => $persona ? $persona->nombres . ' ' . $persona->apellidos : 'N/A',
-                'comentario' => $request->notas ?? '',
+                'comentario' => trim(($request->notas ?? '') . ' | Efectivo esperado: ' . number_format($efectivoEsperado, 2, '.', '')
+                    . ' | Contado: ' . number_format($efectivoContado, 2, '.', '')
+                    . ' | Diferencia: ' . number_format($diferenciaCaja, 2, '.', '')),
                 'situacion' => 'A', // Cierre
                 'tipomovimiento_id' => 4, // Supongamos 4 es Cierre
                 'tipodocumento_id' => 8, // Documento de Cierre
@@ -798,7 +841,7 @@ class MovcajaController extends Controller
                 'conceptopago_id' => 3, // Supongamos 3 es Cierre
                 'moneda' => $request->moneda,
                 'tipocambio' => 3.71,
-                'total' => $request->total,
+                'total' => $efectivoEsperado,
                 'caja_id' => $request->caja_id,
                 'caja' => $caja->numero,
                 'turno_id' => $turnoCaja->movcajainicio->turno_id,
@@ -847,13 +890,12 @@ class MovcajaController extends Controller
             ]);
 
             // Procesar monedas y billetes (rel_movcajadinero)
-            $dineroIds = $request->input('dinero_id', []);
-            $cantidades = $request->input('dinero_cantidad', []);
             $comentarios = $request->input('dinero_comentario', []);
 
+            $dineroValido = \App\Models\Dinero::whereIn('id', $dineroIds)->pluck('id')->all();
             foreach ($dineroIds as $i => $dineroId) {
                 // Evitamos guardar filas vacías
-                if (!isset($cantidades[$i]) || $cantidades[$i] == 0) {
+                if (!in_array((int) $dineroId, $dineroValido, true) || !isset($cantidades[$i]) || (float) $cantidades[$i] <= 0) {
                     continue;
                 }
 
@@ -884,6 +926,44 @@ class MovcajaController extends Controller
                 'errors' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function resumenTotalesCierre(Collection $movimientos, bool $incluirEfectivoCaja = true): array
+    {
+        // El movimiento de cierre conserva detalles para el comprobante, pero no es
+        // un nuevo ingreso ni egreso y nunca debe volver a afectar el cuadre.
+        $transacciones = $movimientos->reject(fn($mov) => (int) $mov->conceptopago_id === 3);
+        $cashMethodId = Mediopago::whereRaw('LOWER(descripcion) = ?', ['efectivo'])->value('id') ?? 1;
+        $ventas = $transacciones->filter(fn($mov) => $mov->movventa);
+        $mediosPago = Mediopago::where('situacion', true)->orderBy('orden')->get();
+        $totales = [];
+
+        foreach ($mediosPago as $medio) {
+            $totales['Ventas | '.$medio->descripcion] = $ventas->flatMap->detMovcaja
+                ->where('mediopago_id', $medio->id)->where('tipo', 'Pagado')->sum('monto');
+        }
+
+        $apertura = $transacciones->filter(fn($mov) => $mov->conceptopago?->descripcion === 'Apertura de caja')
+            ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+        $ingresosEfectivo = $transacciones->filter(fn($mov) => (int) ($mov->movimiento?->tipodocumento_id ?? 0) === 7)
+            ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+        $egresosEfectivo = $transacciones->filter(fn($mov) => (int) ($mov->movimiento?->tipodocumento_id ?? 0) === 8)
+            ->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+        $otrosIngresos = $transacciones->filter(function ($mov) {
+            return (int) ($mov->movimiento?->tipodocumento_id ?? 0) === 7
+                && !$mov->movventa
+                && $mov->conceptopago?->descripcion !== 'Apertura de caja';
+        })->flatMap->detMovcaja->where('mediopago_id', $cashMethodId)->where('tipo', 'Pagado')->sum('monto');
+        $efectivoCaja = round((float) $ingresosEfectivo - (float) $egresosEfectivo, 2);
+
+        $totales['Apertura'] = $apertura;
+        $totales['Otros ingresos'] = $otrosIngresos;
+        $totales['Egresos (gastos)'] = -1 * $egresosEfectivo;
+        if ($incluirEfectivoCaja) $totales['efectivo_caja'] = $efectivoCaja;
+        $totales['Total sin apertura'] = round($efectivoCaja - (float) $apertura, 2);
+        $totales['Total + apertura'] = $efectivoCaja;
+
+        return $totales;
     }
 
     private function enviarCorreoCierreCaja($cajaId, $turnoCaja)
@@ -955,6 +1035,8 @@ class MovcajaController extends Controller
 
     public function store(Request $request)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && (int) $request->input('sucursal_id') === $userBranch, 403, 'La sucursal no corresponde al usuario.');
         DB::beginTransaction();
 
         try {
@@ -966,23 +1048,48 @@ class MovcajaController extends Controller
                 'total' => 'required|numeric|min:0',
                 'caja_id' => 'required|exists:caja,id',
                 'detalles_movimientos_json' => 'required|json',
+                'tipo_documento_visible' => 'required|exists:tipodocumento,id',
+                'operacion' => 'required|in:APERTURAR,INGRESO,EGRESO',
                 'comentario' => 'nullable|string',
                 'persona_id' => 'nullable|exists:persona,id', // Validación de persona_id
             ]);
 
             if ($validator->fails()) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => $validator->errors()
                 ], 422);
             }
 
+            $caja = Caja::whereKey($request->caja_id)->where('sucursal_id', $userBranch)->lockForUpdate()->first();
+            if (!$caja) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'La caja no pertenece a tu sucursal.'], 422);
+            }
+            if ($request->operacion === 'APERTURAR') {
+                $turnoAbierto = RelTurnocaja::conCajaActiva($caja->id)->where('sucursal_id', $userBranch)->exists();
+                if ($turnoAbierto) {
+                    DB::rollBack();
+                    return response()->json(['success' => false, 'message' => 'La caja ya se encuentra aperturada. Debe cerrarla antes de abrir una nueva.'], 422);
+                }
+            } else {
+                $turnoCajaActivo = RelTurnocaja::conCajaActiva($caja->id)->where('sucursal_id', $userBranch)->exists();
+                if (!$turnoCajaActivo) {
+                    DB::rollBack();
+                    return response()->json(['success' => false, 'message' => 'La caja debe estar aperturada para registrar ingresos o egresos.'], 422);
+                }
+            }
+
             // Datos generales
             $usuario = Auth::user();
             $responsable = $usuario->persona;
+            if (!$responsable || (int) $responsable->sucursal_id !== $userBranch) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El responsable no pertenece a tu sucursal.'], 422);
+            }
             $persona = $request->persona_id ? Persona::find($request->persona_id) : null;
             $tipodoc = Tipodocumento::find($request->tipo_documento_visible);
-            $caja = Caja::find($request->caja_id);
             $turnoCaja = RelTurnocaja::conCajaActiva($request->caja_id)->first();
             $turnoId = $turnoCaja ? $turnoCaja->movcajainicio->turno_id : $request->turno_id;
 
@@ -1115,19 +1222,6 @@ class MovcajaController extends Controller
 
             // Cambiar situación de la caja y crear un registro en rel_turnocaja si la operación es 'APERTURAR'
             if ($request->operacion === 'APERTURAR') {
-
-                // Verificar si ya existe un turno abierto en esta sucursal y caja
-                $turnoAbierto = RelTurnocaja::where('sucursal_id', $request->sucursal_id)
-                    ->where('situacion', 'A')
-                    ->whereNull('movcajafin_id') // significa que aún no ha sido cerrado
-                    ->first();
-
-                if ($turnoAbierto) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'La caja ya se encuentra aperturada. Debe cerrarla antes de abrir una nueva.'
-                    ], 422);
-                }
 
                 // Si no existe turno abierto -> se permite aperturar
                 $caja->update(['situacion' => 'A']);
@@ -1598,12 +1692,45 @@ class MovcajaController extends Controller
 
     public function anular($id)
     {
+        $branch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branch, 403, 'El usuario no tiene sucursal asignada.');
         DB::beginTransaction();
 
         try {
-            $movcaja = Movcaja::findOrFail($id);
-            $movimiento = Movimiento::find($movcaja->movimiento_id);
+            $movcaja = Movcaja::where('sucursal_id', $branch)->lockForUpdate()->findOrFail($id);
+            $movimiento = Movimiento::where('sucursal_id', $branch)->lockForUpdate()->findOrFail($movcaja->movimiento_id);
+            if ($movimiento->getRawOriginal('situacion') !== 'A') {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El movimiento ya está anulado.'], 422);
+            }
+
+            $cuentasOrigen = CuentaCobrarpagar::where('movcaja_id', $movcaja->id)->lockForUpdate()->get();
+            foreach ($cuentasOrigen as $cuenta) {
+                $tienePagosActivos = DetCuentaCobrarpagar::where('cuenta_cobrarpagar_id', $cuenta->id)
+                    ->whereIn('situacion', ['A', 'E'])
+                    ->whereHas('movcaja.movimiento', fn($query) => $query->where('situacion', 'A'))
+                    ->exists();
+                if ($tienePagosActivos) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'errors' => 'Esta cuenta tiene pagos parciales activos. Anula primero esos pagos y luego la deuda original.',
+                    ], 409);
+                }
+            }
+
+            $pagosRelacionados = DetCuentaCobrarpagar::where('movcaja_id', $movcaja->id)
+                ->whereIn('situacion', ['A', 'E'])->get();
+            $cuentasPagadas = $pagosRelacionados->pluck('cuenta_cobrarpagar_id')->unique();
             $movimiento->update(['situacion' => 'D']);
+            $pagosRelacionados->each(fn($pago) => $pago->update(['situacion' => 'D']));
+            if ($cuentasOrigen->isNotEmpty()) {
+                CuentaCobrarpagarService::sincronizarDesdeMovcajaId((int) $movcaja->id);
+            }
+            foreach ($cuentasPagadas as $cuentaId) {
+                $cuenta = CuentaCobrarpagar::find($cuentaId);
+                if ($cuenta) CuentaCobrarpagarService::sincronizarDesdeMovcajaId((int) $cuenta->movcaja_id);
+            }
 
             DB::commit();
 
@@ -1680,18 +1807,21 @@ class MovcajaController extends Controller
     public function generarPdfCierre($cajaId)
     {
         try {
+            $user = Auth::user();
+            $persona = Persona::findOrFail($user->persona_id);
+            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+            Caja::whereKey($cajaId)->where('sucursal_id', $sucursal->id)->firstOrFail();
             // Obtener el último turno activo o cerrado para la caja
             $ultimoTurno = RelTurnocaja::where('situacion', 'A') // Turno activo
+                ->where('sucursal_id', $sucursal->id)
                 ->whereHas('movcajainicio', function ($query) use ($cajaId) {
                     $query->where('caja_id', $cajaId);
                 })
                 ->latest('fechainicio') // Último turno
                 ->first();
-            $user = Auth::user();
-            $persona = Persona::find($user->persona_id);
-            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+            abort_if(!$ultimoTurno, 404, 'No se encontró un turno para esta caja.');
             // Obtener movimientos solo del último turno
-            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago'])
+            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago', 'movventa', 'movimiento'])
                 ->when($ultimoTurno && $ultimoTurno->movcajafin_id, function ($query) use ($ultimoTurno) {
                     return $query->where('id', '<=', $ultimoTurno->movcajafin_id);
                 })
@@ -1701,10 +1831,11 @@ class MovcajaController extends Controller
                 ->whereHas('movimiento', function ($query) {
                     $query->where('situacion', 'A'); // Filtrar movimientos con situación 'A'
                 })
+                ->where('caja_id', $cajaId)
                 ->where('sucursal_id', $sucursal->id)
                 ->orderBy('created_at', 'asc')
                 ->get();
-            $movimientosanulados = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago'])
+            $movimientosanulados = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago', 'movventa', 'movimiento'])
                 ->when($ultimoTurno && $ultimoTurno->movcajafin_id, function ($query) use ($ultimoTurno) {
                     return $query->where('id', '<=', $ultimoTurno->movcajafin_id);
                 })
@@ -1714,12 +1845,13 @@ class MovcajaController extends Controller
                 ->whereHas('movimiento', function ($query) {
                     $query->where('situacion', 'D'); // Filtrar movimientos con situación 'A'
                 })
+                ->where('caja_id', $cajaId)
                 ->where('sucursal_id', $sucursal->id)
                 ->orderBy('created_at', 'asc')
                 ->get();
             // dd($movimientosanulados);
             // Agrupar detalles por Medio de Pago y Tipo de Concepto de Pago
-            $detallesAgrupados = $movimientos->flatMap->detMovcaja->groupBy(function ($detalle) {
+            $detallesAgrupados = $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->groupBy(function ($detalle) {
                 $tipoConcepto = $detalle->movcaja->conceptopago->tipo;
                 $conceptoDescripcion = $detalle->movcaja->conceptopago->descripcion;
 
@@ -1786,67 +1918,7 @@ class MovcajaController extends Controller
                 ];
             });
 
-            $totales = [
-                'Ventas | Efectivo' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Tarjeta' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 2)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Transferencia' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 3)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Depósito' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 4)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Billetera digital' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 5)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->where(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->descripcion === 'Apertura de caja';
-                })->sum('monto'),
-
-                'Otros ingresos' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movimiento->movimiento_id == null && $movcaja->conceptopago_id != 2 && $movcaja->movimiento->tipodocumento_id === 7;
-                })->flatMap->detMovcaja->where('tipo', 'Pagado')->sum('monto'),
-
-                // Convertir Egresos a negativo:
-                'Egresos (gastos)' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->where(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' && $detalle->movcaja->conceptopago_id != 3;
-                })->sum('monto') * (-1),
-
-                // Calcular efectivo en caja
-                'efectivo_caja' =>
-                $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movimiento->tipodocumento_id == 7;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
-                    + $movimientos->filter(function ($movcaja) {
-                        return $movcaja->movimiento->tipodocumento->tipomovimiento_id == 2 && $movcaja->conceptopago_id == 4;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto')
-
-                    - $movimientos->filter(function ($movcaja) {
-                        return $movcaja->movimiento->tipodocumento_id == 8;
-                    })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
-                // Nuevo: Total sin apertura
-                'Total sin apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->filter(function ($detalle) {
-                    return $detalle->movcaja->conceptopago_id != 3 && $detalle->movcaja->conceptopago->descripcion !== 'Apertura de caja';
-                })->sum(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' ? -$detalle->monto : $detalle->monto;
-                }),
-
-                // Total con apertura (igual que antes)
-                'Total + apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->filter(function ($detalle) {
-                    return $detalle->movcaja->conceptopago_id != 3;
-                })->sum(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' ? -$detalle->monto : $detalle->monto;
-                }),
-            ];
+            $totales = $this->resumenTotalesCierre($movimientos);
 
 
             // Obtener todos los medios de pago
@@ -1856,7 +1928,7 @@ class MovcajaController extends Controller
                 $movimientosPorMetodo = $movimientos->filter(function ($movcaja) use ($medio) {
                     return $movcaja->movventa && // Ventas
                         $movcaja->detMovcaja->where('mediopago_id', $medio->id)->isNotEmpty();
-                })->flatMap->detMovcaja->where('mediopago_id', $medio->id);
+                })->flatMap->detMovcaja->where('mediopago_id', $medio->id)->where('tipo', 'Pagado');
 
                 // Detallar y agrupar los movimientos por detalle
                 $detalles = $movimientosPorMetodo->map(function ($detalle) use ($medio) {
@@ -2315,18 +2387,21 @@ class MovcajaController extends Controller
     public function generarPdfCierreTicket($cajaId)
     {
         try {
+            $user = Auth::user();
+            $persona = Persona::findOrFail($user->persona_id);
+            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+            Caja::whereKey($cajaId)->where('sucursal_id', $sucursal->id)->firstOrFail();
             // Obtener el último turno activo o cerrado para la caja
             $ultimoTurno = RelTurnocaja::where('situacion', 'A') // Turno activo
+                ->where('sucursal_id', $sucursal->id)
                 ->whereHas('movcajainicio', function ($query) use ($cajaId) {
                     $query->where('caja_id', $cajaId);
                 })
                 ->latest('fechainicio') // Último turno
                 ->first();
-            $user = Auth::user();
-            $persona = Persona::find($user->persona_id);
-            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+            abort_if(!$ultimoTurno, 404, 'No se encontró un turno para esta caja.');
             // Obtener movimientos solo del último turno
-            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago'])
+            $movimientos = Movcaja::with(['detMovcaja.Mediopago', 'conceptopago', 'movventa', 'movimiento'])
                 ->when($ultimoTurno && $ultimoTurno->movcajafin_id, function ($query) use ($ultimoTurno) {
                     return $query->where('id', '<=', $ultimoTurno->movcajafin_id);
                 })
@@ -2336,12 +2411,13 @@ class MovcajaController extends Controller
                 ->whereHas('movimiento', function ($query) {
                     $query->where('situacion', 'A'); // Filtrar movimientos con situación 'A'
                 })
+                ->where('caja_id', $cajaId)
                 ->where('sucursal_id', $sucursal->id)
                 ->orderBy('created_at', 'asc')
                 ->get();
 
             // Agrupar detalles por Medio de Pago y Tipo de Concepto de Pago
-            $detallesAgrupados = $movimientos->flatMap->detMovcaja->groupBy(function ($detalle) {
+            $detallesAgrupados = $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->groupBy(function ($detalle) {
                 $tipoConcepto = $detalle->movcaja->conceptopago->tipo;
                 $conceptoDescripcion = $detalle->movcaja->conceptopago->descripcion;
 
@@ -2408,54 +2484,7 @@ class MovcajaController extends Controller
                 ];
             });
 
-            $totales = [
-                'Ventas | Efectivo' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 1)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Tarjeta' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 2)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Transferencia' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 3)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Depósito' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 4)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Ventas | Billetera digital' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movventa;
-                })->flatMap->detMovcaja->where('mediopago_id', 5)->where('tipo', 'Pagado')->sum('monto'),
-
-                'Apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->where(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->descripcion === 'Apertura de caja';
-                })->sum('monto'),
-
-                'Otros ingresos' => $movimientos->filter(function ($movcaja) {
-                    return $movcaja->movimiento->movimiento_id == null && $movcaja->conceptopago_id != 2 && $movcaja->movimiento->tipodocumento_id === 7;
-                })->flatMap->detMovcaja->where('tipo', 'Pagado')->sum('monto'),
-
-                // Convertir Egresos a negativo:
-                'Egresos (gastos)' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->where(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' && $detalle->movcaja->conceptopago_id != 3;
-                })->sum('monto') * (-1),
-
-                // Nuevo: Total sin apertura
-                'Total sin apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->filter(function ($detalle) {
-                    return $detalle->movcaja->conceptopago_id != 3 && $detalle->movcaja->conceptopago->descripcion !== 'Apertura de caja';
-                })->sum(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' ? -$detalle->monto : $detalle->monto;
-                }),
-
-                // Total con apertura (igual que antes)
-                'Total + apertura' => $movimientos->flatMap->detMovcaja->where('tipo', 'Pagado')->filter(function ($detalle) {
-                    return $detalle->movcaja->conceptopago_id != 3;
-                })->sum(function ($detalle) {
-                    return $detalle->movcaja->conceptopago->tipo === 'Egreso' ? -$detalle->monto : $detalle->monto;
-                }),
-            ];
+            $totales = $this->resumenTotalesCierre($movimientos, false);
 
             // Obtener todos los medios de pago
             $mediosPago = Mediopago::where('situacion', true)->get();
@@ -2464,7 +2493,7 @@ class MovcajaController extends Controller
                 $movimientosPorMetodo = $movimientos->filter(function ($movcaja) use ($medio) {
                     return $movcaja->movventa && // Ventas
                         $movcaja->detMovcaja->where('mediopago_id', $medio->id)->isNotEmpty();
-                })->flatMap->detMovcaja->where('mediopago_id', $medio->id);
+                })->flatMap->detMovcaja->where('mediopago_id', $medio->id)->where('tipo', 'Pagado');
 
                 // Detallar y agrupar los movimientos por detalle
                 $detalles = $movimientosPorMetodo->map(function ($detalle) use ($medio) {
@@ -2775,19 +2804,43 @@ class MovcajaController extends Controller
 
     public function report(Request $request)
     {
-        try {
-            $user = Auth::user();
-            $persona = Persona::find($user->persona_id);
-            $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+        $user = Auth::user();
+        $persona = Persona::findOrFail($user->persona_id);
+        $sucursal = Sucursal::findOrFail($persona->sucursal_id);
+        $request->validate([
+            'caja_id' => ['nullable', 'integer', Rule::exists('caja', 'id')->where('sucursal_id', $sucursal->id)],
+            'turno' => 'nullable|string|max:20',
+            'tipo' => 'nullable|in:0,Ingreso,Egreso',
+            'conceptospago' => 'nullable|integer|min:0',
+            'search' => 'nullable|string|max:150',
+            'fechaInicio' => 'nullable|date_format:Y-m-d',
+            'fechaFin' => 'nullable|date_format:Y-m-d|after_or_equal:fechaInicio',
+            'perPage' => 'nullable|integer|in:10,25,50,100',
+        ]);
 
+        $cajaFiltro = $request->filled('caja_id') ? (int) $request->input('caja_id') : null;
+        $turnoRequest = (string) $request->input('turno', '');
+        $turnoFiltro = null;
+        if ($turnoRequest !== '' && $turnoRequest !== '0') {
+            $turnoFiltro = RelTurnocaja::where('sucursal_id', $sucursal->id)
+                ->whereKey((int) $turnoRequest)
+                ->whereHas('movcajainicio', fn($q) => $q->where('sucursal_id', $sucursal->id)
+                    ->when($cajaFiltro, fn($box) => $box->where('caja_id', $cajaFiltro)))
+                ->firstOrFail();
+        }
+
+        try {
             // Cajas de la sucursal
             $cajas = Caja::where('sucursal_id', $sucursal->id)
                 ->orderBy('situacion', 'ASC')
                 ->get();
 
             // Tomar caja_id del request si viene, si no, la primera disponible
-            $caja_id = $request->input('caja_id', $cajas->first()->id ?? null);
-            $cajaSeleccionada = $caja_id ? Caja::find($caja_id) : null;
+            $caja_id = $cajaFiltro ?? ($cajas->first()->id ?? null);
+            $cajaSeleccionada = $caja_id
+                ? Caja::whereKey($caja_id)->where('sucursal_id', $sucursal->id)->first()
+                : null;
+            $caja_id = $cajaSeleccionada?->id;
 
             // Operaciones (depende del estado de la caja seleccionada)
             $operaciones = Operacione::where('tabla_id', 61)
@@ -2800,7 +2853,6 @@ class MovcajaController extends Controller
                 ->get();
 
             // Filtros desde el request
-            $turnoRequest = $request->input('turno');              // "0" | id | null
             $tipoRequest = $request->input('tipo');               // "Ingreso" | "Egreso" | null
             $conceptoId = $request->filled('conceptospago') ? (int) $request->input('conceptospago') : null; // 0 = todos
             $search = trim((string) $request->input('search', ''));
@@ -2825,10 +2877,10 @@ class MovcajaController extends Controller
              */
             if ($turnoRequest === "0" || $turnoRequest === 0) {
                 // sin filtro adicional
-            } elseif (!empty($turnoRequest) && ($turnofilter = RelTurnocaja::find($turnoRequest))) {
-                $movimientoQuery->where('id', '>=', $turnofilter->movcajainicio_id);
-                if ($turnofilter->movcajafin_id) {
-                    $movimientoQuery->where('id', '<=', $turnofilter->movcajafin_id);
+            } elseif ($turnoFiltro) {
+                $movimientoQuery->where('id', '>=', $turnoFiltro->movcajainicio_id);
+                if ($turnoFiltro->movcajafin_id) {
+                    $movimientoQuery->where('id', '<=', $turnoFiltro->movcajafin_id);
                 }
             } else {
                 // sin turno -> desde última apertura
@@ -2851,19 +2903,25 @@ class MovcajaController extends Controller
              * Aplica sobre created_at de movcajas y, si existe, también sobre movimiento.fecha
              */
             if ($fechaInicio && $fechaFin) {
-                $movimientoQuery->where('sucursal_id', $sucursal->id)->whereBetween(DB::raw('DATE(created_at)'), [$fechaInicio, $fechaFin])
-                    ->orWhereHas('movimiento', function ($mq) use ($fechaInicio, $fechaFin) {
-                        $mq->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+                $movimientoQuery->where(function ($query) use ($fechaInicio, $fechaFin) {
+                    $query->whereBetween(DB::raw('DATE(created_at)'), [$fechaInicio, $fechaFin])
+                        ->orWhereHas('movimiento', function ($mq) use ($fechaInicio, $fechaFin) {
+                        $mq->whereDate('fecha', '>=', $fechaInicio)->whereDate('fecha', '<=', $fechaFin);
+                        });
                     });
             } elseif ($fechaInicio) {
-                $movimientoQuery->where('sucursal_id', $sucursal->id)->whereDate('created_at', '>=', $fechaInicio)
-                    ->orWhereHas('movimiento', function ($mq) use ($fechaInicio) {
-                        $mq->whereDate('fecha', '>=', $fechaInicio);
+                $movimientoQuery->where(function ($query) use ($fechaInicio) {
+                    $query->whereDate('created_at', '>=', $fechaInicio)
+                        ->orWhereHas('movimiento', function ($mq) use ($fechaInicio) {
+                            $mq->whereDate('fecha', '>=', $fechaInicio);
+                        });
                     });
             } elseif ($fechaFin) {
-                $movimientoQuery->where('sucursal_id', $sucursal->id)->whereDate('created_at', '<=', $fechaFin)
-                    ->orWhereHas('movimiento', function ($mq) use ($fechaFin) {
-                        $mq->whereDate('fecha', '<=', $fechaFin);
+                $movimientoQuery->where(function ($query) use ($fechaFin) {
+                    $query->whereDate('created_at', '<=', $fechaFin)
+                        ->orWhereHas('movimiento', function ($mq) use ($fechaFin) {
+                            $mq->whereDate('fecha', '<=', $fechaFin);
+                        });
                     });
             }
 
@@ -2892,14 +2950,20 @@ class MovcajaController extends Controller
              */
             if ($search !== '') {
                 $movimientoQuery->where(function ($q) use ($search) {
-                    $q->where('observacion', 'LIKE', "%{$search}%")
-                        // Campos frecuentes en "movimiento": ajusta a tu esquema real
+                    $term = '%'.$search.'%';
+                    $q->where('caja', 'ILIKE', $term)
+                        ->orWhere('moneda', 'ILIKE', $term)
+                        ->orWhereRaw('CAST(movcaja.total AS TEXT) ILIKE ?', [$term])
                         ->orWhereHas('movimiento', function ($mq) use ($search) {
-                            $mq->where('numero', 'LIKE', "%{$search}%")
-                                ->orWhere('serie', 'LIKE', "%{$search}%")
-                                ->orWhere('cliente', 'LIKE', "%{$search}%")
-                                ->orWhere('persona', 'LIKE', "%{$search}%");
-                        });
+                            $term = '%'.$search.'%';
+                            $mq->where('numero', 'ILIKE', $term)
+                                ->orWhere('usuario', 'ILIKE', $term)
+                                ->orWhere('comentario', 'ILIKE', $term)
+                                ->orWhere('persona', 'ILIKE', $term)
+                                ->orWhereHas('Persona.personamaestro', fn($p) => $p->where('nombres', 'ILIKE', $term)
+                                    ->orWhere('apellidos', 'ILIKE', $term)->orWhere('nrodoc', 'ILIKE', $term));
+                        })
+                        ->orWhereHas('conceptopago', fn($concepto) => $concepto->where('descripcion', 'ILIKE', $term));
                 });
             }
 
@@ -2914,9 +2978,9 @@ class MovcajaController extends Controller
                 $tipoDocumentoId = $movcaja->movimiento->tipodocumento_id;
                 $tipoMovimientoId = $movcaja->movimiento->tipomovimiento_id;
 
-                if ($tipoDocumentoId === 7) {
+                if ((int) $tipoDocumentoId === 7) {
                     return $movcaja->total;
-                } elseif ($tipoDocumentoId === 8) {
+                } elseif ((int) $tipoDocumentoId === 8) {
                     return -$movcaja->total;
                 } elseif ($tipoMovimientoId === 2) {
                     return $movcaja->total;

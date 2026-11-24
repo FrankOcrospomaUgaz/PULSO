@@ -2473,9 +2473,20 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
         ));
     }
 
+    // Compatibility route used by the caja report menu.
+    public function movcaja(Request $request)
+    {
+        return $this->dashmovcaja($request);
+    }
+
     public function dashmovcaja(Request $request)
     {
-        $sucursal_id = Auth::user()->persona->sucursal_id;
+        $request->validate([
+            'fecha_inicio' => 'nullable|date_format:Y-m-d',
+            'fecha_fin' => 'nullable|date_format:Y-m-d|after_or_equal:fecha_inicio',
+        ]);
+        $sucursal_id = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($sucursal_id, 403, 'Tu usuario no tiene una sucursal asignada.');
 
         // Si existen en request usar esas fechas, si no usar valores por defecto
         $fechaInicio = $request->filled('fecha_inicio')
@@ -2493,10 +2504,11 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
             'Egreso' => 0,
         ]);
 
-        $cajaItems = \App\Models\Movcaja::with('movimiento')
+        $cajaItems = \App\Models\Movcaja::with(['movimiento.tipodocumento', 'conceptopago', 'detMovcaja'])
             ->whereHas('movimiento', function ($q) use ($fechaInicio, $fechaFin, $sucursal_id) {
                 $q->whereBetween('fecha', [$fechaInicio, $fechaFin])
                     ->where('sucursal_id', $sucursal_id)
+                    ->where('situacion', 'A')
                     ->whereNull('deleted_at');
             })
             ->whereNotIn('conceptopago_id', [2, 3])
@@ -2505,101 +2517,64 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
 
         // Clasificar por tipo (Ingreso: 7, 4, 9, 10 / Egreso: 8)
         foreach ($cajaItems as $item) {
-            $tipo = $item->movimiento->tipodocumento_id;
+            $tipo = (int) $item->movimiento->tipodocumento_id;
+            $pagado = (float) $item->detMovcaja->where('tipo', 'Pagado')->whereIn('situacion', ['A', 'E'])->sum('monto');
+            $montoPen = $item->moneda === 'USD' ? $pagado * (float) ($item->tipocambio ?: 1) : $pagado;
 
-            if (in_array($tipo, [7, 4, 9, 10])) {
-                $ingresosVsEgresos['Ingreso'] += $item->moneda === 'PEN' ? $item->total : 0;
+            if (in_array($tipo, [7, 4, 9, 10], true)) {
+                $ingresosVsEgresos['Ingreso'] += $montoPen;
             } elseif ($tipo === 8) {
-                $ingresosVsEgresos['Egreso'] += $item->moneda === 'PEN' ? $item->total : 0;
+                $ingresosVsEgresos['Egreso'] += $montoPen;
             }
         }
 
         $ingresosPorMetodo = DetMovcaja::with(['mediopago', 'movcaja.movimiento'])
             ->whereHas('movcaja', function ($q) use ($fechaInicio, $fechaFin, $sucursal_id) {
-                $q->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                $q->whereHas('movimiento', fn($m) => $m->whereBetween('fecha', [$fechaInicio, $fechaFin])->where('situacion', 'A')->where('sucursal_id', $sucursal_id))
                     ->where('sucursal_id', $sucursal_id)
                     ->whereNotIn('conceptopago_id', [2, 3])
                     ->whereHas('movimiento', fn($m) => $m->where('tipodocumento_id', 7)
                         ->orWhereIn('tipodocumento_id', [4, 9, 10]))
                     ->whereNull('deleted_at');
             })
-            ->whereNull('deleted_at')
+            ->where('tipo', 'Pagado')->whereIn('situacion', ['A', 'E'])->whereNull('deleted_at')
             ->get()
             ->groupBy(fn($i) => $i->Mediopago->descripcion ?? 'Otro')
-            ->map(fn($grupo) => round($grupo->sum('monto'), 2));
+            ->map(fn($grupo) => round($grupo->sum(fn($item) => (float) $item->monto * ($item->movcaja?->moneda === 'USD' ? (float) ($item->movcaja?->tipocambio ?: 1) : 1)), 2));
 
         // Egresos por método de pago
         $egresosPorMetodo = DetMovcaja::with(['mediopago', 'movcaja.movimiento'])
             ->whereHas('movcaja', function ($q) use ($fechaInicio, $fechaFin, $sucursal_id) {
-                $q->whereBetween('created_at', [$fechaInicio, $fechaFin])
+                $q->whereHas('movimiento', fn($m) => $m->whereBetween('fecha', [$fechaInicio, $fechaFin])->where('situacion', 'A')->where('sucursal_id', $sucursal_id))
                     ->where('sucursal_id', $sucursal_id)
                     ->whereNotIn('conceptopago_id', [2, 3])
                     ->whereHas('movimiento', fn($m) => $m->where('tipodocumento_id', 8)) // Solo egresos
                     ->whereNull('deleted_at');
             })
-            ->whereNull('deleted_at')
+            ->where('tipo', 'Pagado')->whereIn('situacion', ['A', 'E'])->whereNull('deleted_at')
             ->get()
             ->groupBy(fn($i) => $i->Mediopago->descripcion ?? 'Otro')
-            ->map(fn($grupo) => round($grupo->sum('monto'), 2));
+            ->map(fn($grupo) => round($grupo->sum(fn($item) => (float) $item->monto * ($item->movcaja?->moneda === 'USD' ? (float) ($item->movcaja?->tipocambio ?: 1) : 1)), 2));
 
-        $ingresosPorConcepto = Movcaja::with(['conceptopago', 'movimiento.tipodocumento'])
-            ->whereBetween('created_at', [$fechaInicio, $fechaFin])
-            ->where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->get();
+        $montoPagadoPen = fn($movcaja) => (float) $movcaja->detMovcaja
+            ->where('tipo', 'Pagado')->whereIn('situacion', ['A', 'E'])
+            ->sum(fn($detalle) => (float) $detalle->monto * ($movcaja->moneda === 'USD' ? (float) ($movcaja->tipocambio ?: 1) : 1));
 
-        $conceptos = $ingresosPorConcepto
-            ->filter(fn($m) => $m->movimiento && $m->movimiento->tipodocumento && $m->movimiento->tipodocumento->nombre === 'Ingreso' && $m->conceptopago->descripcion !== 'Apertura de caja')
-            ->groupBy(fn($m) => $m->conceptopago->descripcion ?? 'Otro')
-            ->map(fn($grupo) => round($grupo->sum('total'), 2));
+        $ingresosPeriodo = $cajaItems->filter(fn($m) => in_array((int) $m->movimiento->tipodocumento_id, [7, 4, 9, 10], true));
+        $ingresosPorConcepto = $ingresosPeriodo
+            ->groupBy(fn($m) => in_array((int) $m->movimiento->tipodocumento_id, [4, 9, 10], true)
+                ? 'Pago de cliente' : ($m->conceptopago?->descripcion ?? 'Otro'))
+            ->map(fn($grupo) => round($grupo->sum($montoPagadoPen), 2));
 
-        // Grupo "Paga cliente"
-        $pagaCliente = $ingresosPorConcepto
-            ->filter(fn($m) => $m->movimiento && in_array($m->movimiento->tipodocumento_id, [4, 10, 9]))
-            ->sum('total');
+        $egresosPeriodo = $cajaItems->filter(fn($m) => (int) $m->movimiento->tipodocumento_id === 8);
+        $egresosPorConcepto = $egresosPeriodo
+            ->groupBy(fn($m) => $m->conceptopago?->descripcion ?? 'Otro')
+            ->map(fn($grupo) => round($grupo->sum($montoPagadoPen), 2));
 
-        $conceptos['Pago de cliente'] = round($pagaCliente, 2);
-        $ingresosPorConcepto = $conceptos;
-
-        $egresosPorConceptoRaw = Movcaja::with(['conceptopago', 'movimiento.tipodocumento'])
-            ->whereBetween('created_at', [$fechaInicio, $fechaFin])
-            ->where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->get();
-
-        $egresosPorConcepto = $egresosPorConceptoRaw
-            ->filter(fn($m) => $m->movimiento && $m->movimiento->tipodocumento && ($m->movimiento->tipodocumento->nombre === 'Egreso') && $m->conceptopago->descripcion !== 'Cierre de caja')
-            ->groupBy(fn($m) => $m->conceptopago->descripcion ?? 'Otro')
-            ->map(fn($grupo) => round($grupo->sum('total'), 2));
-        // Ejemplo de consulta para evolución de ingresos y egresos por fecha
-        $ingresos = Movcaja::with(['movimiento.tipodocumento'])
-            ->whereBetween('created_at', [$fechaInicio, $fechaFin])
-            ->where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->get()
-            ->filter(fn($m) => $m->movimiento && $m->movimiento->tipodocumento && ($m->movimiento->tipodocumento->nombre === 'Ingreso' || in_array($m->movimiento->tipodocumento_id, [4, 9, 10])) && $m->conceptopago->descripcion !== 'Apertura de caja')
-            ->groupBy(fn($m) => \Carbon\Carbon::parse($m->created_at)->format('Y-m-d'))
-            ->map(function ($items, $fecha) {
-                return (object)[
-                    'fecha' => $fecha,
-                    'total' => $items->sum('total')
-                ];
-            })
-            ->values();
-        $egresos = Movcaja::with(['movimiento.tipodocumento'])
-            ->whereBetween('created_at', [$fechaInicio, $fechaFin])
-            ->where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->get()
-            ->filter(fn($m) => $m->movimiento &&  ($m->movimiento->tipodocumento->nombre === 'Egreso' || in_array($m->movimiento->tipodocumento_id, [8])) && $m->conceptopago->descripcion !== 'Cierre de caja')
-            ->groupBy(fn($m) => \Carbon\Carbon::parse($m->created_at)->format('Y-m-d'))
-            ->map(function ($items, $fecha) {
-                return (object)[
-                    'fecha' => $fecha,
-                    'total' => $items->sum('total')
-                ];
-            })
-            ->values();
+        $ingresos = $ingresosPeriodo->groupBy(fn($m) => Carbon::parse($m->movimiento->fecha)->format('Y-m-d'))
+            ->map(fn($items, $fecha) => (object) ['fecha' => $fecha, 'total' => round($items->sum($montoPagadoPen), 2)])->values();
+        $egresos = $egresosPeriodo->groupBy(fn($m) => Carbon::parse($m->movimiento->fecha)->format('Y-m-d'))
+            ->map(fn($items, $fecha) => (object) ['fecha' => $fecha, 'total' => round($items->sum($montoPagadoPen), 2)])->values();
         $fechas = collect($ingresos)->pluck('fecha')
             ->merge(collect($egresos)->pluck('fecha'))
             ->unique()->sort()->values();

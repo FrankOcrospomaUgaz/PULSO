@@ -29,94 +29,19 @@ class KardexController extends Controller
      */
     public function index(Request $request)
     {
-        $perPage   = $request->input('perPage', 10);
-        $search    = $request->input('search');
-        $categoria = $request->input('categoria_id');
-        $marca     = $request->input('marca_id');
-        $tipo      = $request->input('tipo');
-        $compuesto = $request->input('compuesto');
-        $situacion = $request->input('situacion');
-        $fechaDesde = $request->input('fecha_desde');
-        $fechaHasta = $request->input('fecha_hasta');
-
-        // Operaciones
+        $filters = $this->validatedReportFilters($request);
+        [$query, $branch] = $this->kardexQuery($request, $filters);
+        $perPage = (int) ($filters['perPage'] ?? 10);
         $operaciones = Operacione::where('tabla_id', 66)
             ->where('estado', true)
             ->get();
-
-        // Usuario y sucursal
-        $user = Auth::user();
-        $persona = Persona::find($user->persona_id);
-        $sucursal = Sucursal::find($persona->sucursal_id);
-
-        // Query principal con relaciones
-        $query = Kardex::with(['producto.categorium', 'producto.marca', 'tipomovimiento', 'tipodocumento'])
-            ->where('sucursal_id', $sucursal->id);
-
-        // 🔹 Búsqueda libre
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->whereRaw("LOWER(usuario) LIKE ?", ['%' . strtolower($search) . '%'])
-                    ->orWhereRaw("LOWER(json_producto) LIKE ?", ['%' . strtolower($search) . '%'])
-                    ->orWhereRaw("LOWER(moneda) LIKE ?", ['%' . strtolower($search) . '%'])
-                    ->orWhereHas('producto', function ($q2) use ($search) {
-                        $q2->whereRaw("LOWER(descripcion) LIKE ?", ['%' . strtolower($search) . '%'])
-                            ->orWhereRaw("LOWER(codigo) LIKE ?", ['%' . strtolower($search) . '%']);
-                    })
-                    ->orWhereHas('producto.categorium', function ($q3) use ($search) {
-                        $q3->whereRaw("LOWER(descripcion) LIKE ?", ['%' . strtolower($search) . '%']);
-                    })
-                    ->orWhereHas('producto.marca', function ($q4) use ($search) {
-                        $q4->whereRaw("LOWER(descripcion) LIKE ?", ['%' . strtolower($search) . '%']);
-                    });
-            });
-        }
-
-        // 🔹 Filtros
-        if ($categoria) {
-            $query->whereHas('producto', function ($q) use ($categoria) {
-                $q->where('categoria_id', $categoria);
-            });
-        }
-
-        if ($marca) {
-            $query->whereHas('producto', function ($q) use ($marca) {
-                $q->where('marca_id', $marca);
-            });
-        }
-
-        if ($tipo) {
-            $query->whereHas('producto', function ($q) use ($tipo) {
-                $q->where('tipo', $tipo);
-            });
-        }
-
-        if ($compuesto !== null && $compuesto !== '') {
-            $query->whereHas('producto', function ($q) use ($compuesto) {
-                $q->where('compuesto', $compuesto === 'Sí' ? 'S' : 'N');
-            });
-        }
-
-        if ($situacion !== null && $situacion !== '') {
-            $query->where('situacion', $situacion === 'Activado' ? 'E' : 'D');
-        }
-
-        if ($fechaDesde) {
-            $query->whereDate('fecha', '>=', $fechaDesde);
-        }
-
-        if ($fechaHasta) {
-            $query->whereDate('fecha', '<=', $fechaHasta);
-        }
-
-        // 🔹 Ejecutar query
-        $kardex = $query->orderBy('fecha', 'desc')->paginate($perPage);
-
-        // Datos auxiliares para filtros
-        $categorias  = Categorium::all();
+        $kardex = $query->orderByDesc('fecha')->orderByDesc('id')->paginate($perPage)->withQueryString();
+        $categorias = Categorium::whereHas('relCategoriasucursal', fn ($q) => $q->where('sucursal_id', $branch))
+            ->orderBy('descripcion')->get();
         $tipos       = ['Producto final', 'Materia prima'];
         $situaciones = ['Activado', 'Desactivado'];
-        $marcas      = Marca::all();
+        $marcas = Marca::whereHas('productos', fn ($q) => $q->whereHas('relProductosucursal', fn ($s) => $s->where('sucursal_id', $branch)))
+            ->orderBy('descripcion')->get();
         $compuestos  = ['Sí', 'No'];
 
         return view('kardex.index', compact(
@@ -128,6 +53,100 @@ class KardexController extends Controller
             'marcas',
             'compuestos'
         ))->with('i', (request()->input('page', 1) - 1) * $kardex->perPage());
+    }
+
+    private function validatedReportFilters(Request $request): array
+    {
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:150',
+            'categoria_id' => 'nullable|integer',
+            'marca_id' => 'nullable|integer',
+            'tipo' => 'nullable|string|max:80',
+            'compuesto' => 'nullable|in:S,N',
+            'situacion' => 'nullable|in:Activado,Desactivado',
+            'fecha_inicio' => 'nullable|date',
+            'fecha_fin' => 'nullable|date|after_or_equal:fecha_inicio',
+            'hora_inicio' => 'nullable|date_format:H:i',
+            'hora_fin' => 'nullable|date_format:H:i',
+            'perPage' => 'nullable|integer|in:10,25,50,100',
+        ]);
+        if (!empty($filters['fecha_inicio']) && !empty($filters['fecha_fin']) && !empty($filters['hora_inicio']) && !empty($filters['hora_fin'])) {
+            $start = $filters['fecha_inicio'].' '.$filters['hora_inicio'];
+            $end = $filters['fecha_fin'].' '.$filters['hora_fin'];
+            if (strtotime($end) < strtotime($start)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['fecha_fin' => 'La fecha y hora final deben ser posteriores al inicio.']);
+            }
+        }
+        return $filters;
+    }
+
+    private function kardexQuery(Request $request, array $filters)
+    {
+        $branch = (int) $request->user()->persona?->sucursal_id;
+        abort_unless($branch, 403, 'Tu usuario no tiene una sucursal asignada.');
+        $query = Kardex::with(['producto.categorium', 'producto.marca', 'unidad', 'movimiento.tipodocumento.tipomovimiento', 'movimiento.movventa'])
+            ->where('sucursal_id', $branch)->whereNull('deleted_at');
+
+        if (!empty($filters['search'])) {
+            $term = mb_strtolower(trim($filters['search']));
+            $query->where(function ($q) use ($term) {
+                $q->whereRaw('LOWER(usuario) LIKE ?', ["%{$term}%"])
+                    ->orWhereRaw('LOWER(COALESCE(json_producto::text, \'\')) LIKE ?', ["%{$term}%"])
+                    ->orWhereRaw('LOWER(moneda) LIKE ?', ["%{$term}%"])
+                    ->orWhereHas('producto', fn ($p) => $p->whereRaw('LOWER(descripcion) LIKE ?', ["%{$term}%"])->orWhereRaw('LOWER(codigo) LIKE ?', ["%{$term}%"]));
+            });
+        }
+        if (!empty($filters['categoria_id'])) $query->whereHas('producto', fn ($q) => $q->where('categoria_id', $filters['categoria_id']));
+        if (!empty($filters['marca_id'])) $query->whereHas('producto', fn ($q) => $q->where('marca_id', $filters['marca_id']));
+        if (!empty($filters['tipo'])) $query->whereHas('producto', fn ($q) => $q->where('tipo', $filters['tipo']));
+        if (!empty($filters['compuesto'])) $query->whereHas('producto', fn ($q) => $q->where('compuesto', $filters['compuesto']));
+        if (($filters['situacion'] ?? null) === 'Activado') $query->whereIn('situacion', ['A', 'E']);
+        if (($filters['situacion'] ?? null) === 'Desactivado') $query->where('situacion', 'D');
+
+        if (!empty($filters['fecha_inicio'])) {
+            $query->where('fecha', '>=', $filters['fecha_inicio'].' '.($filters['hora_inicio'] ?? '00:00').':00');
+        }
+        if (!empty($filters['fecha_fin'])) {
+            $query->where('fecha', '<=', $filters['fecha_fin'].' '.($filters['hora_fin'] ?? '23:59').':59');
+        }
+        return [$query, $branch];
+    }
+
+    public function exportarCsv(Request $request)
+    {
+        $filters = $this->validatedReportFilters($request);
+        [$query] = $this->kardexQuery($request, $filters);
+        $filename = 'kardex-'.now()->format('Ymd-His').'.csv';
+        return response()->streamDownload(function () use ($query) {
+            $output = fopen('php://output', 'w');
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, ['Fecha', 'Código', 'Producto', 'Movimiento', 'Unidad', 'Stock anterior', 'Cantidad', 'Stock actual', 'Precio unitario', 'Moneda', 'Tipo cambio', 'Total', 'Origen', 'Situación'], ';');
+            $query->orderBy('fecha')->orderBy('id')->chunk(500, function ($rows) use ($output) {
+                foreach ($rows as $row) {
+                    fputcsv($output, [
+                        $row->fecha, $row->producto?->codigo, $row->producto?->descripcion,
+                        $row->movimiento?->tipodocumento?->nombre, $row->unidad?->descripcion,
+                        $row->stockanterior, $row->cantidad, $row->stockactual, $row->preciounitario,
+                        $row->moneda, $row->tipocambio, $row->total,
+                        $row->movimiento?->numero, $row->situacion,
+                    ], ';');
+                }
+            });
+            fclose($output);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function exportarPdf(Request $request)
+    {
+        $filters = $this->validatedReportFilters($request);
+        [$query, $branch] = $this->kardexQuery($request, $filters);
+        $sucursal = Sucursal::findOrFail($branch);
+        $totalRegistros = (clone $query)->count();
+        $kardex = $query->orderByDesc('fecha')->orderByDesc('id')->limit(3000)->get();
+        $incluidos = $kardex->count();
+        $pdf = Pdf::loadView('kardex.reporte-pdf', compact('kardex', 'sucursal', 'totalRegistros', 'incluidos'))
+            ->setPaper('a4', 'landscape');
+        return $pdf->download('kardex-'.now()->format('Ymd-His').'.pdf');
     }
 
 
@@ -157,7 +176,11 @@ class KardexController extends Controller
      */
     public function show($id)
     {
-        $kardex = Kardex::find($id);
+        $branch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branch, 403, 'Tu usuario no tiene una sucursal asignada.');
+        $kardex = Kardex::with(['producto', 'unidad', 'movimiento.tipodocumento'])
+            ->where('sucursal_id', $branch)
+            ->findOrFail($id);
 
         return view('kardex.show', compact('kardex'));
     }

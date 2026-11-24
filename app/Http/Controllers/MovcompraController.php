@@ -10,8 +10,10 @@ use App\Models\Categorium;
 use App\Models\Conceptopago;
 use App\Models\DetMovcaja;
 use App\Models\DetMovcompra;
+use App\Models\DetCuentaCobrarpagar;
 use App\Models\Igv;
 use App\Models\Kardex;
+use App\Models\Listaunidad;
 use App\Models\Mediopago;
 use App\Models\Movcaja;
 use App\Models\Movcompra;
@@ -190,6 +192,8 @@ class MovcompraController extends Controller
 
     public function store(Request $request)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && $userBranch === (int) $request->input('sucursal_id'), 403, 'La compra no corresponde a tu sucursal.');
         DB::beginTransaction();
 
         try {
@@ -215,28 +219,86 @@ class MovcompraController extends Controller
             ]);
 
             if ($validator->fails()) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => $validator->errors(),
                 ], 422);
             }
 
+            $detalles = json_decode($request->detalles_json, true);
+            $validadorVencimientos = Validator::make(['detalles' => $detalles], [
+                'detalles' => 'required|array',
+                'detalles.*.fecha_vencimiento' => 'nullable|date',
+            ]);
+            if ($validadorVencimientos->fails()) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => $validadorVencimientos->errors()], 422);
+            }
+
             if ($request->afecta_caja === 'S') {
                 $validatorCaja = Validator::make($request->all(), [
-                    'caja_id' => 'required|exists:caja,id',
+                    'caja_id' => 'required|integer',
+                    'fecha_movcaja' => 'nullable|date',
                     'detalles_movimientos_json' => 'required|json',
                 ]);
                 if ($validatorCaja->fails()) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'errors' => $validatorCaja->errors(),
                     ], 422);
                 }
+
+                $caja = Caja::whereKey($request->caja_id)->where('sucursal_id', $userBranch)->where('situacion', 'A')->first();
+                if (!$caja) {
+                    DB::rollBack();
+                    return response()->json(['success' => false, 'errors' => 'Selecciona una caja activa de tu sucursal.'], 422);
+                }
+
+                $turnoAbierto = RelTurnocaja::conCajaActiva($caja->id)
+                    ->where('sucursal_id', $userBranch)->lockForUpdate()->first();
+                if (!$turnoAbierto) {
+                    DB::rollBack();
+                    return response()->json(['success' => false, 'errors' => 'La caja seleccionada no tiene un turno abierto.'], 422);
+                }
+
+                $detallesCaja = json_decode($request->detalles_movimientos_json, true);
+                $validadorPagos = Validator::make(['pagos' => $detallesCaja], [
+                    'pagos' => 'required|array|min:1',
+                    'pagos.*' => 'required|array',
+                    'pagos.*.tipo' => 'required|in:Pagado,Deuda',
+                    'pagos.*.monto' => 'required|numeric|gt:0',
+                    'pagos.*.mediopago_id' => 'required|integer',
+                    'pagos.*.fechavencimiento' => 'nullable|date',
+                ]);
+                $mediosIds = collect(is_array($detallesCaja) ? $detallesCaja : [])->pluck('mediopago_id')->filter()->unique();
+                $mediosActivos = Mediopago::where('situacion', true)->whereIn('id', $mediosIds)->count();
+                $montoPagos = collect(is_array($detallesCaja) ? $detallesCaja : [])->sum(fn ($item) => is_array($item) ? (float) ($item['monto'] ?? 0) : 0);
+                $deudaSinVencimiento = collect(is_array($detallesCaja) ? $detallesCaja : [])->contains(function ($item) {
+                    return is_array($item) && ($item['tipo'] ?? null) === 'Deuda'
+                        && empty($item['fechavencimiento']) && empty($item['fecha_vencimiento']);
+                });
+                if ($validadorPagos->fails() || $deudaSinVencimiento || $mediosActivos !== $mediosIds->count() || abs($montoPagos - (float) $request->total) > 0.01) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'errors' => $validadorPagos->errors()->isNotEmpty()
+                            ? $validadorPagos->errors()
+                            : ['detalles_movimientos_json' => ['El desglose debe usar medios activos y sumar exactamente el total de la compra.']],
+                    ], 422);
+                }
             }
 
             $usuario = Auth::user();
-            $responsable = Persona::findOrFail($request->responsable_id);
-            $persona = $request->persona_id ? Persona::find($request->persona_id) : null;
+            $responsable = Persona::whereKey($request->responsable_id)->where('sucursal_id', $userBranch)->firstOrFail();
+            $persona = $request->persona_id
+                ? Persona::whereKey($request->persona_id)->where('sucursal_id', $userBranch)->first()
+                : null;
+            if ($request->filled('persona_id') && !$persona) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El proveedor no pertenece a tu sucursal.'], 422);
+            }
             $tipodocumento = Tipodocumento::findOrFail($request->tipodocumento_id);
             $serieCompleta = $tipodocumento->abreviatura . str_pad($request->serie, 3, '0', STR_PAD_LEFT);
 
@@ -288,7 +350,6 @@ class MovcompraController extends Controller
                 'sucursal_id' => $request->sucursal_id,
             ]);
 
-            $detalles = json_decode($request->detalles_json, true);
             $this->guardarDetallesCompra($movcompra, $detalles, $request);
 
             if ($request->afecta_kardex === 'S') {
@@ -399,12 +460,17 @@ class MovcompraController extends Controller
 
     public function update(Request $request, $id)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && (int) Movcompra::whereKey($id)->value('sucursal_id') === $userBranch, 403, 'La compra no corresponde a tu sucursal.');
+        abort_unless((int) $request->input('sucursal_id') === $userBranch, 403, 'La sucursal enviada no corresponde a tu usuario.');
         DB::beginTransaction();
 
         try {
-            $movcompra = Movcompra::with('movimiento')->findOrFail($id);
+            $movcompra = Movcompra::with(['movimiento', 'detMovcompras', 'movcaja.detMovcaja', 'movcaja.movimiento'])
+                ->lockForUpdate()->findOrFail($id);
 
             if ($movcompra->movimiento->getRawOriginal('situacion') !== 'A') {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => 'No se puede editar una compra anulada.',
@@ -428,14 +494,46 @@ class MovcompraController extends Controller
             ]);
 
             if ($validator->fails()) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => $validator->errors(),
                 ], 422);
             }
 
-            $responsable = Persona::findOrFail($request->responsable_id);
-            $persona = $request->persona_id ? Persona::find($request->persona_id) : null;
+            $detalles = json_decode($request->detalles_json, true);
+            $validadorVencimientos = Validator::make(['detalles' => $detalles], [
+                'detalles' => 'required|array',
+                'detalles.*.fecha_vencimiento' => 'nullable|date',
+            ]);
+            if ($validadorVencimientos->fails()) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => $validadorVencimientos->errors()], 422);
+            }
+
+            $movcajaExistente = $movcompra->movcaja;
+            if ($movcajaExistente && $movcajaExistente->detMovcaja->isNotEmpty()) {
+                $cambioMonto = abs((float) $request->total - (float) $movcajaExistente->total) > 0.009;
+                $cambioMoneda = $request->moneda !== $movcajaExistente->moneda
+                    || abs((float) $request->tipocambio - (float) $movcajaExistente->tipocambio) > 0.0009;
+                if ($cambioMonto || $cambioMoneda) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'errors' => 'No se puede cambiar total, moneda o tipo de cambio mientras existe un desglose de pagos/deuda. Ajusta el desglose desde caja antes de editar la compra.',
+                    ], 409);
+                }
+            }
+
+            $responsable = Persona::whereKey($request->responsable_id)->where('sucursal_id', $userBranch)->firstOrFail();
+            $persona = $request->persona_id
+                ? Persona::whereKey($request->persona_id)->where('sucursal_id', $userBranch)->first()
+                : null;
+            if ($request->filled('persona_id') && !$persona) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El proveedor no pertenece a tu sucursal.'], 422);
+            }
+            $afectabaKardexAntes = $movcompra->afecta_kardex === 'S';
 
             $movcompra->movimiento->update([
                 'fecha' => $request->fecha_compra,
@@ -445,6 +543,15 @@ class MovcompraController extends Controller
                 'persona' => $persona ? trim($persona->nombres . ' ' . $persona->apellidos) : 'CLIENTES VARIOS',
                 'comentario' => $request->comentario ?? '',
             ]);
+
+            if ($movcajaExistente) {
+                $movcajaExistente->update([
+                    'total' => $request->total,
+                    'moneda' => $request->moneda,
+                    'tipocambio' => $request->tipocambio,
+                ]);
+                $movcajaExistente->movimiento?->update(['fecha' => $request->fecha_compra]);
+            }
 
             $movcompra->update([
                 'tipo_detalle' => $request->tipo_detalle,
@@ -457,9 +564,16 @@ class MovcompraController extends Controller
                 'afecta_kardex' => $request->afecta_kardex,
             ]);
 
+            $inventarioGestionadoAntes = $this->revertirStockRegistrado($movcompra, $movcompra->movimiento);
+
             DetMovcompra::where('movcompra_id', $movcompra->id)->delete();
-            $detalles = json_decode($request->detalles_json, true);
             $this->guardarDetallesCompra($movcompra, $detalles, $request);
+            if ($request->afecta_kardex === 'S' && (!$afectabaKardexAntes || $inventarioGestionadoAntes)) {
+                $request->merge(['tipodocumento_id' => $movcompra->movimiento->tipodocumento_id]);
+                $this->actualizarStockYKardex($movcompra, $detalles, $movcompra->movimiento, Auth::user(), $request);
+            }
+
+            if ($movcajaExistente) CuentaCobrarpagarService::sincronizarDesdeMovcajaId((int) $movcajaExistente->id);
 
             DB::commit();
 
@@ -480,17 +594,43 @@ class MovcompraController extends Controller
 
     public function anular($id)
     {
+        $branch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($branch, 403);
         DB::beginTransaction();
 
         try {
-            $movcompra = Movcompra::with(['detMovcompras', 'movcaja', 'movimiento'])->findOrFail($id);
+            $movcompra = Movcompra::with(['detMovcompras', 'movcaja', 'movimiento'])->where('sucursal_id', $branch)->findOrFail($id);
             $movimiento = $movcompra->movimiento;
 
             if ($movimiento->getRawOriginal('situacion') !== 'A') {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => 'La compra ya está anulada.',
                 ], 422);
+            }
+
+            $movcaja = $movcompra->movcaja;
+            if ($movcaja) {
+                $cuentasOrigen = \App\Models\CuentaCobrarpagar::where('movcaja_id', $movcaja->id)->lockForUpdate()->get();
+                foreach ($cuentasOrigen as $cuenta) {
+                    $tienePagosActivos = DetCuentaCobrarpagar::where('cuenta_cobrarpagar_id', $cuenta->id)
+                        ->whereIn('situacion', ['A', 'E'])
+                        ->whereHas('movcaja.movimiento', fn($query) => $query->where('situacion', 'A'))
+                        ->exists();
+                    if ($tienePagosActivos) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'errors' => 'La compra tiene una cuenta por pagar con pagos parciales activos. Anula primero los pagos relacionados.',
+                        ], 409);
+                    }
+                }
+                $pagosRelacionados = DetCuentaCobrarpagar::where('movcaja_id', $movcaja->id)
+                    ->whereIn('situacion', ['A', 'E'])->get();
+            } else {
+                $cuentasOrigen = collect();
+                $pagosRelacionados = collect();
             }
 
             $usuario = Auth::user();
@@ -503,31 +643,18 @@ class MovcompraController extends Controller
                 'motivo' => request('motivo') ?? 'Anulación de compra',
             ]);
 
-            if ($movcompra->getRawOriginal('afecta_kardex') === 'S') {
-                foreach ($movcompra->detMovcompras as $detalle) {
-                    if (!$detalle->producto_id) {
-                        continue;
-                    }
+            $this->revertirStockRegistrado($movcompra, $movimiento);
 
-                    $stockProducto = Stockproducto::where('producto_id', $detalle->producto_id)
-                        ->where('unidadbase_id', $detalle->unidad_id)
-                        ->where('sucursal_id', $movcompra->sucursal_id)
-                        ->first();
-
-                    if ($stockProducto) {
-                        $stockProducto->stockbase -= $detalle->cantidad;
-                        $stockProducto->save();
-                    }
-
-                    Kardex::where('producto_id', $detalle->producto_id)
-                        ->where('movimiento_id', $movimiento->id)
-                        ->update(['situacion' => 'D']);
-                }
-            }
-
-            $movcaja = $movcompra->movcaja;
             if ($movcaja && $movcaja->movimiento) {
                 $movcaja->movimiento->update(['situacion' => 'D']);
+                $pagosRelacionados->each(fn($pago) => $pago->update(['situacion' => 'D']));
+                if ($cuentasOrigen->isNotEmpty()) {
+                    CuentaCobrarpagarService::sincronizarDesdeMovcajaId((int) $movcaja->id);
+                }
+                foreach ($pagosRelacionados->pluck('cuenta_cobrarpagar_id')->unique() as $cuentaId) {
+                    $cuenta = \App\Models\CuentaCobrarpagar::find($cuentaId);
+                    if ($cuenta) CuentaCobrarpagarService::sincronizarDesdeMovcajaId((int) $cuenta->movcaja_id);
+                }
             }
 
             DB::commit();
@@ -593,12 +720,16 @@ class MovcompraController extends Controller
         $igvPredeterminado = $igvPredeterminadoId ? Igv::find($igvPredeterminadoId) : null;
 
         foreach ($detalles as $detalle) {
-            $productoId = $detalle['producto_id'] ?? null;
+            $productoCandidate = $detalle['producto_id'] ?? null;
+            $productoId = is_numeric($productoCandidate) ? (int) $productoCandidate : null;
             $relProductoSucursal = $productoId
                 ? RelProductosucursal::where('producto_id', $productoId)
                     ->where('sucursal_id', $sucursalId)
                     ->first()
                 : null;
+            if ($productoId && !$relProductoSucursal) {
+                throw new \RuntimeException('Un producto de la compra no está habilitado en la sucursal seleccionada.');
+            }
 
             $igv_id = $relProductoSucursal?->igv_id ?? $igvPredeterminado?->id;
             $igvClase = $igv_id ? Igv::find($igv_id) : $igvPredeterminado;
@@ -613,6 +744,10 @@ class MovcompraController extends Controller
             $cantidad = (float) ($detalle['cantidad'] ?? 0);
             $precioUnitario = (float) ($detalle['precio_unitario'] ?? 0);
             $importe = $cantidad * $precioUnitario;
+
+            if ($request->afecta_kardex === 'S' && $relProductoSucursal && !empty($detalle['fecha_vencimiento'])) {
+                $this->registrarVencimientoProductoSucursal($relProductoSucursal, (string) $detalle['fecha_vencimiento']);
+            }
 
             DetMovcompra::create([
                 'movcompra_id' => $movcompra->id,
@@ -640,7 +775,8 @@ class MovcompraController extends Controller
         Request $request
     ): void {
         foreach ($detalles as $detalle) {
-            $productoId = $detalle['producto_id'] ?? null;
+            $productoCandidate = $detalle['producto_id'] ?? null;
+            $productoId = is_numeric($productoCandidate) ? (int) $productoCandidate : null;
             if (!$productoId) {
                 continue;
             }
@@ -654,27 +790,31 @@ class MovcompraController extends Controller
             $unidadId = $unidad?->id ?? 1;
             $cantidad = (float) ($detalle['cantidad'] ?? 0);
             $precioUnitario = (float) ($detalle['precio_unitario'] ?? 0);
+            $producto = Producto::whereKey($productoId)
+                ->whereHas('relProductosucursal', fn ($q) => $q->where('sucursal_id', $request->sucursal_id))
+                ->lockForUpdate()->firstOrFail();
+            $unidadBaseId = (int) ($producto?->unidadbase_id ?? $unidadId);
+            $factor = $this->factorUnidadBase($productoId, $unidadId, $unidadBaseId);
+            $cantidadBase = $cantidad * $factor;
 
             $stockProducto = Stockproducto::firstOrNew([
                 'producto_id' => $productoId,
-                'unidadbase_id' => $unidadId,
+                'unidadbase_id' => $unidadBaseId,
                 'sucursal_id' => $request->sucursal_id,
             ]);
 
             $stockAnterior = $stockProducto->stockbase ?? 0;
-            $stockProducto->stockbase = $stockAnterior + $cantidad;
+            $stockProducto->stockbase = $stockAnterior + $cantidadBase;
             $stockProducto->save();
-
-            $producto = Producto::find($productoId);
 
             Kardex::create([
                 'producto_id' => $productoId,
                 'json_producto' => json_encode($producto),
                 'unidad_id' => $unidadId,
-                'json_listaunidad' => json_encode(['unidad_nombre' => $unidad?->descripcion ?? '']),
+                'json_listaunidad' => json_encode(['unidad_nombre' => $unidad?->descripcion ?? '', 'formula' => $factor]),
                 'cantidad' => $cantidad,
-                'unidadbase_id' => $unidadId,
-                'cantidadbase' => $cantidad,
+                'unidadbase_id' => $unidadBaseId,
+                'cantidadbase' => $cantidadBase,
                 'preciounitario' => $precioUnitario,
                 'moneda' => $request->moneda,
                 'tipocambio' => $request->tipocambio,
@@ -693,6 +833,49 @@ class MovcompraController extends Controller
         }
     }
 
+    private function factorUnidadBase(?int $productoId, int $unidadId, int $unidadBaseId): float
+    {
+        if ($unidadId === $unidadBaseId) return 1.0;
+        $formula = Listaunidad::where('producto_id', $productoId)->where('unidad_id', $unidadId)
+            ->where('unidadbase_id', $unidadBaseId)->value('formula');
+        if (!$formula || (float) $formula <= 0) {
+            throw new \RuntimeException('Falta la conversión de unidad a unidad base para un producto de la compra.');
+        }
+        return (float) $formula;
+    }
+
+    private function registrarVencimientoProductoSucursal(RelProductosucursal $relacion, string $fecha): void
+    {
+        $existente = $relacion->getRawOriginal('fechavencimiento');
+        // El esquema actual guarda una fecha por producto/sucursal; conservar la más próxima evita ocultar una alerta activa.
+        if (!$existente || $fecha < substr((string) $existente, 0, 10)) {
+            $relacion->fechavencimiento = $fecha;
+            $relacion->save();
+        }
+    }
+
+    private function revertirStockRegistrado(Movcompra $movcompra, Movimiento $movimiento): bool
+    {
+        $entradas = Kardex::where('movimiento_id', $movimiento->id)
+            ->where('tipomovimiento_id', $movimiento->tipomovimiento_id)
+            ->where('sucursal_id', $movcompra->sucursal_id)->where('situacion', 'A')->lockForUpdate()->get();
+        if ($entradas->isEmpty()) return false;
+
+        foreach ($entradas->groupBy(fn ($entry) => $entry->producto_id.'|'.$entry->unidadbase_id) as $group) {
+            $entry = $group->first();
+            $stock = Stockproducto::where('producto_id', $entry->producto_id)->where('sucursal_id', $movcompra->sucursal_id)
+                ->where('unidadbase_id', $entry->unidadbase_id)->lockForUpdate()->first();
+            if (!$stock) throw new \RuntimeException('No se encontró la existencia de una compra; el cambio fue cancelado para proteger el kárdex.');
+            $before = (float) $stock->stockbase;
+            $quantity = (float) $group->sum('cantidadbase');
+            if ($before + 0.000001 < $quantity) throw new \RuntimeException('No se puede editar/anular la compra: parte de ese stock ya fue consumido.');
+            $stock->stockbase = $before - $quantity;
+            $stock->save();
+            foreach ($group as $item) $item->update(['situacion' => 'D']);
+        }
+        return true;
+    }
+
     private function registrarMovimientoCaja(
         Movcompra $movcompra,
         Movimiento $movimientoPadre,
@@ -702,10 +885,16 @@ class MovcompraController extends Controller
         ?Persona $persona,
         array $detallesMovCaja
     ): void {
-        $caja = Caja::findOrFail($request->caja_id);
-        $turnoCaja = RelTurnocaja::conCajaActiva($request->caja_id)->first();
-        $turnoId = $turnoCaja?->movcajainicio?->turno_id ?? Turno::where('sucursal_id', $request->sucursal_id)->value('id');
-        $turno = $turnoId ? Turno::find($turnoId) : null;
+        $caja = Caja::whereKey($request->caja_id)
+            ->where('sucursal_id', $request->sucursal_id)
+            ->where('situacion', 'A')->firstOrFail();
+        $turnoCaja = RelTurnocaja::conCajaActiva($caja->id)
+            ->where('sucursal_id', $request->sucursal_id)->lockForUpdate()->firstOrFail();
+        $turnoId = $turnoCaja->movcajainicio?->turno_id;
+        $turno = $turnoId ? Turno::whereKey($turnoId)->where('sucursal_id', $request->sucursal_id)->first() : null;
+        if (!$turnoId || !$turno) {
+            throw new \RuntimeException('El turno abierto de la caja no es válido para esta sucursal.');
+        }
 
         $movimientoCaja = Movimiento::create([
             'numero' => $this->generateNumeroMovcaja($request->sucursal_id, $request->caja_id),

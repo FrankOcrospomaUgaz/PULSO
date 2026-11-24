@@ -42,7 +42,13 @@ class CuentaCobrarpagarController extends Controller
         $tipoConcepto = $cuenta->tipo === 'COBRAR' ? 'I' : 'E';
         $conceptos = Conceptopago::where('tipo', $tipoConcepto)->orderBy('descripcion')->get();
         $medioPagos = Mediopago::where('situacion', true)->orderBy('descripcion')->get();
-        $cajas = Caja::where('sucursal_id', $cuenta->sucursal_id)->orderBy('numero')->get();
+        $cajasActivas = RelTurnocaja::where('sucursal_id', $cuenta->sucursal_id)
+            ->where('situacion', 'A')->whereNull('fechafin')
+            ->with('movcajainicio:id,caja_id,sucursal_id')
+            ->get()->pluck('movcajainicio.caja_id')->filter()->unique()->values();
+        $cajas = Caja::where('sucursal_id', $cuenta->sucursal_id)
+            ->where('situacion', 'A')->whereIn('id', $cajasActivas)->orderBy('numero')->get();
+        abort_if($cajas->isEmpty(), 409, 'No hay una caja abierta en la sucursal de esta cuenta. Abre una caja antes de registrar el pago.');
         $responsable = Auth::user()->persona;
         $responsable?->loadMissing('personamaestro');
 
@@ -55,35 +61,48 @@ class CuentaCobrarpagarController extends Controller
 
         $request->validate([
             'caja_id' => 'required|exists:caja,id',
-            'conceptopago_id' => 'nullable|exists:conceptopago,id',
+            'conceptopago_id' => ($cuenta->tipo === 'PAGAR' ? 'required' : 'nullable') . '|exists:conceptopago,id',
             'mediopago_id' => 'required|exists:mediopago,id',
             'monto' => 'required|numeric|min:0.01',
             'numero' => 'nullable|string|max:255',
             'comentario' => 'nullable|string',
         ]);
 
-        if ((float) $request->monto > $cuenta->restante) {
-            return response()->json([
-                'success' => false,
-                'errors' => 'El monto no puede ser mayor al restante de la cuenta.'
-            ], 422);
-        }
-
         DB::beginTransaction();
 
         try {
+            $cuenta = CuentaCobrarpagar::whereKey($cuenta->id)->lockForUpdate()->firstOrFail();
+            $this->autorizarCuenta($cuenta);
+            if ((float) $request->monto > $cuenta->restante + 0.000001) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El monto no puede ser mayor al restante de la cuenta.'], 422);
+            }
             $usuario = Auth::user();
             $responsable = $usuario->persona;
             $persona = $cuenta->movcaja?->movimiento?->Persona;
             $caja = Caja::findOrFail($request->caja_id);
+            if ((int) $caja->sucursal_id !== (int) $cuenta->sucursal_id) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'La caja seleccionada pertenece a otra sucursal.'], 422);
+            }
+            $tipoConcepto = $cuenta->tipo === 'COBRAR' ? 'I' : 'E';
             $concepto = $cuenta->tipo === 'COBRAR'
                 ? $this->conceptoPagoCuentaPorCobrar()
                 : Conceptopago::findOrFail($request->conceptopago_id);
-            $medioPago = Mediopago::findOrFail($request->mediopago_id);
+            if ($concepto->getRawOriginal('tipo') !== $tipoConcepto) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El concepto no corresponde al tipo de cuenta.'], 422);
+            }
+            $medioPago = Mediopago::where('situacion', true)->findOrFail($request->mediopago_id);
             $tipoDocumentoId = $cuenta->tipo === 'COBRAR' ? 7 : 8;
-            $turnoCaja = RelTurnocaja::conCajaActiva($caja->id)->first();
-            $turnoId = $turnoCaja?->movcajainicio?->turno_id ?? Turno::where('sucursal_id', $cuenta->sucursal_id)->value('id');
-            $turno = $turnoId ? Turno::find($turnoId) : null;
+            $turnoCaja = RelTurnocaja::conCajaActiva($caja->id)
+                ->where('sucursal_id', $cuenta->sucursal_id)->lockForUpdate()->first();
+            if (!$turnoCaja || (int) $turnoCaja->movcajainicio?->sucursal_id !== (int) $cuenta->sucursal_id) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'La caja ya no tiene un turno abierto en esta sucursal.'], 409);
+            }
+            $turnoId = $turnoCaja->movcajainicio->turno_id;
+            $turno = $turnoId ? Turno::where('sucursal_id', $cuenta->sucursal_id)->find($turnoId) : null;
 
             $movimiento = Movimiento::create([
                 'numero' => $this->generarNumero($cuenta->sucursal_id, $caja->id),
@@ -177,6 +196,7 @@ class CuentaCobrarpagarController extends Controller
 
     public function pdf(Request $request, string $tipo)
     {
+        abort_unless(in_array(strtoupper($tipo), ['COBRAR', 'PAGAR'], true), 404);
         [$cuentas, $resumen] = $this->buscarCuentas($request, strtoupper($tipo), false);
 
         return PDF::loadView('cuenta-cobrarpagar.pdf', [
@@ -188,6 +208,7 @@ class CuentaCobrarpagarController extends Controller
 
     public function excel(Request $request, string $tipo)
     {
+        abort_unless(in_array(strtoupper($tipo), ['COBRAR', 'PAGAR'], true), 404);
         [$cuentas] = $this->buscarCuentas($request, strtoupper($tipo), false);
         $filename = 'cuentas-' . strtolower($tipo) . '.csv';
 
@@ -224,6 +245,21 @@ class CuentaCobrarpagarController extends Controller
 
     private function buscarCuentas(Request $request, string $tipo, bool $paginate): array
     {
+        $request->validate([
+            'caja_id' => 'nullable|integer|exists:caja,id',
+            'sucursal_id' => 'nullable|integer|exists:sucursal,id',
+            'estado' => 'nullable|in:NUEVO,PAGANDO,PAGADO',
+            'situacion' => 'nullable|in:A,D',
+            'conceptopago_id' => 'nullable|integer|exists:conceptopago,id',
+            'fechaInicio' => 'nullable|date',
+            'fechaFin' => 'nullable|date|after_or_equal:fechaInicio',
+            'fechaProgramada' => 'nullable|date',
+            'estado_cuotas' => 'nullable|in:ATIEMPO,VENCIDAS',
+            'persona' => 'nullable|string|max:150',
+            'search' => 'nullable|string|max:150',
+            'salon' => 'nullable|string|max:100',
+            'perPage' => 'nullable|integer|in:10,25,50,100',
+        ]);
         $persona = Persona::with('sucursal')->findOrFail(Auth::user()->persona_id);
         $sucursal = $persona->sucursal;
         $sucursalIds = Sucursal::where('empresa_id', $sucursal->empresa_id)->pluck('id');
@@ -233,6 +269,11 @@ class CuentaCobrarpagarController extends Controller
             ->whereIn('cuenta_cobrarpagar.sucursal_id', $sucursalIds)
             ->where('cuenta_cobrarpagar.tipo', $tipo);
 
+        if ($request->filled('situacion')) {
+            $query->where('cuenta_cobrarpagar.situacion', $request->situacion);
+        } else {
+            $query->whereIn('cuenta_cobrarpagar.situacion', ['A', 'E']);
+        }
         $this->aplicarFiltros($query, $request);
 
         $resumen = $this->resumenDesdeQuery(clone $query);
@@ -250,7 +291,7 @@ class CuentaCobrarpagarController extends Controller
         ]);
 
         $cuentas = $paginate
-            ? $listQuery->latest('cuenta_cobrarpagar.id')->paginate($request->input('perPage', 10))->appends($request->all())
+            ? $listQuery->latest('cuenta_cobrarpagar.id')->paginate((int) $request->input('perPage', 10))->appends($request->all())
             : $listQuery->latest('cuenta_cobrarpagar.id')->get();
 
         $filtros = [
@@ -369,6 +410,7 @@ class CuentaCobrarpagarController extends Controller
             ->sum('monto');
 
         $pagadoDetalles = DetCuentaCobrarpagar::where('cuenta_cobrarpagar_id', $cuenta->id)
+            ->whereIn('situacion', ['A', 'E'])
             ->whereHas('movcaja.movimiento', fn($q) => $q->where('situacion', 'A'))
             ->with('movcaja')
             ->get()
@@ -388,6 +430,9 @@ class CuentaCobrarpagarController extends Controller
     {
         $persona = Persona::with('sucursal')->findOrFail(Auth::user()->persona_id);
         abort_unless($persona->sucursal && $persona->sucursal->empresa_id === $cuenta->sucursal->empresa_id, 403);
+        abort_unless(in_array($cuenta->getRawOriginal('situacion'), ['A', 'E'], true), 409, 'La cuenta está inactiva y no admite pagos.');
+        abort_unless($cuenta->movcaja?->movimiento?->getRawOriginal('situacion') === 'A', 409, 'El movimiento original está anulado.');
+        abort_if($cuenta->restante <= 0.000001, 409, 'La cuenta ya está pagada.');
     }
 
     private function generarNumero(int $sucursalId, int $cajaId): string

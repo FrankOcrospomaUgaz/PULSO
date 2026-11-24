@@ -215,11 +215,11 @@ class FacturadorController extends Controller
         // Selección de URL según tipo documento y porcentaje IGV
         if ($tipo_documento == 'B') {
          
-                $url = "http://157.245.85.164/facturacion/wsdl/wsdl_boleta_rc.php";
+                $url = config('services.facturacion.boleta_wsdl');
             
         } else {
           
-                $url = "http://157.245.85.164/facturacion/wsdl/wsdl_factura_rc.php";
+                $url = config('services.facturacion.factura_wsdl');
             
         }
 

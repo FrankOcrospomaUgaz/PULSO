@@ -10,6 +10,7 @@
             <div class="col s12">
                 <div class="card main-content">
 
+                    <form method="GET" action="{{ route('kardex.index') }}" id="kardex-filters">
                     <!-- 🔹 Filtro de búsqueda y filtros adicionales -->
                     <div class="row valign-wrapper" id="filtros" style="margin-bottom: 10px; flex-wrap: wrap;">
                         <div class="row">
@@ -17,7 +18,7 @@
                                 <!-- Buscador -->
                                 <div class="col s12 m4 left-align">
                                     <div class="input-field">
-                                        <input type="text" id="search-input" class="validate"
+                                        <input type="text" id="search-input" name="search" value="{{ request('search') }}" class="validate"
                                             data-url-base="{{ route('kardex.index') }}">
                                         <label for="search-input">Buscar</label>
                                     </div>
@@ -25,11 +26,11 @@
                                 <!-- Categoría -->
                                 <div class="col s12 m2">
                                     <div class="input-field">
-                                        <select id="categoria-filter" name="categoria" onchange="filterKardex()">
-                                            <option value="" disabled selected>Todas</option>
+                                        <select id="categoria-filter" name="categoria_id">
+                                            <option value="" disabled @selected(!request()->filled('categoria_id'))>Todas</option>
                                             @foreach ($categorias as $categoria)
                                                 <option value="{{ $categoria->id }}"
-                                                    {{ request('categoria') == $categoria->id ? 'selected' : '' }}>
+                                                    {{ request('categoria_id') == $categoria->id ? 'selected' : '' }}>
                                                     {{ $categoria->descripcion }}
                                                 </option>
                                             @endforeach
@@ -40,11 +41,11 @@
                                 <!-- Marca -->
                                 <div class="col s12 m2">
                                     <div class="input-field">
-                                        <select id="marca-filter" name="marca" onchange="filterKardex()">
-                                            <option value="" disabled selected>Todas</option>
+                                        <select id="marca-filter" name="marca_id">
+                                            <option value="" disabled @selected(!request()->filled('marca_id'))>Todas</option>
                                             @foreach ($marcas as $marca)
                                                 <option value="{{ $marca->id }}"
-                                                    {{ request('marca') == $marca->id ? 'selected' : '' }}>
+                                                    {{ request('marca_id') == $marca->id ? 'selected' : '' }}>
                                                     {{ $marca->descripcion }}
                                                 </option>
                                             @endforeach
@@ -56,7 +57,7 @@
                                 <div class="col s12 m2">
                                     <div class="input-field">
                                         <input type="date" id="fecha_inicio" name="fecha_inicio"
-                                            value="{{ request('fecha_inicio', date('Y-m-d')) }}">
+                                            value="{{ request('fecha_inicio') }}">
                                         <label for="fecha_inicio" class="active">Fecha inicio</label>
                                     </div>
                                 </div>
@@ -72,7 +73,7 @@
                                 <div class="col s12 m2">
                                     <div class="input-field">
                                         <input type="date" id="fecha_fin" name="fecha_fin"
-                                            value="{{ request('fecha_fin', date('Y-m-d')) }}">
+                                            value="{{ request('fecha_fin') }}">
                                         <label for="fecha_fin" class="active">Fecha fin</label>
                                     </div>
                                 </div>
@@ -87,8 +88,8 @@
                                 <!-- Tipo -->
                                 <div class="col s12 m2">
                                     <div class="input-field">
-                                        <select id="tipo-filter" name="tipo" onchange="filterKardex()">
-                                            <option value="" disabled selected>Todos</option>
+                                        <select id="tipo-filter" name="tipo">
+                                            <option value="" disabled @selected(!request()->filled('tipo'))>Todos</option>
                                             @foreach ($tipos as $tipo)
                                                 <option value="{{ $tipo }}"
                                                     {{ request('tipo') == $tipo ? 'selected' : '' }}>
@@ -102,11 +103,11 @@
                                 <!-- Compuesto -->
                                 <div class="col s12 m2">
                                     <div class="input-field">
-                                        <select id="compuesto-filter" name="compuesto" onchange="filterKardex()">
-                                            <option value="" disabled selected>Todos</option>
-                                            <option value="1" {{ request('compuesto') === '1' ? 'selected' : '' }}>Sí
+                                        <select id="compuesto-filter" name="compuesto">
+                                            <option value="" disabled @selected(!request()->filled('compuesto'))>Todos</option>
+                                            <option value="S" {{ request('compuesto') === 'S' ? 'selected' : '' }}>Sí
                                             </option>
-                                            <option value="0" {{ request('compuesto') === '0' ? 'selected' : '' }}>No
+                                            <option value="N" {{ request('compuesto') === 'N' ? 'selected' : '' }}>No
                                             </option>
                                         </select>
                                         <label>Compuesto</label>
@@ -115,8 +116,8 @@
                                 <!-- Situación -->
                                 <div class="col s12 m2">
                                     <div class="input-field">
-                                        <select id="situacion-filter" name="situacion" onchange="filterKardex()">
-                                            <option value="" disabled selected>Todos</option>
+                                        <select id="situacion-filter" name="situacion">
+                                            <option value="" disabled @selected(!request()->filled('situacion'))>Todos</option>
                                             @foreach ($situaciones as $situacion)
                                                 <option value="{{ $situacion }}"
                                                     {{ request('situacion') == $situacion ? 'selected' : '' }}>
@@ -134,22 +135,21 @@
                             <div class="input-field"
                                 style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
                                 <button class="btn teal tooltipped btn-buscar" id="btn-Kardex" data-tooltip="Buscar"
-                                    type="button" onclick="filterKardex()">
+                                    type="submit">
                                     <i class="fa-solid fa-magnifying-glass white-text"></i>
                                 </button>
-                                <button class="btn red tooltipped btn-pdf" id="btn-pdf-Kardex" data-tooltip="Reporte en PDF"
-                                    type="button" onclick="pdfKardex()">
+                                <a class="btn red tooltipped btn-pdf" id="btn-pdf-Kardex" data-tooltip="Reporte en PDF"
+                                    href="{{ route('kardex.exportarPdf', request()->query()) }}">
                                     <i class="fa-solid fa-file-pdf white-text right"></i> PDF
-                                </button>
-                                <button class="btn green tooltipped btn-excel" id="btn-excel-Kardex"
-                                    data-tooltip="Reporte en Excel" type="button" onclick="excelKardex()">
+                                </a>
+                                <a class="btn green tooltipped btn-excel" id="btn-excel-Kardex"
+                                    data-tooltip="Reporte en Excel" href="{{ route('kardex.exportarCsv', request()->query()) }}">
                                     <i class="fa-solid fa-file-excel white-text right"></i> Excel
-                                </button>
-                                <button class="btn purple tooltipped btn-ticket" id="btn-ticket-Kardex"
-                                    data-tooltip="Resumen en ticket" type="button"
-                                    onclick="window.open('{{ route('kardex.resumen_pdf') }}', '_blank')">
+                                </a>
+                                <a class="btn purple tooltipped btn-ticket" id="btn-ticket-Kardex"
+                                    data-tooltip="Resumen en ticket" href="{{ route('kardex.resumen_pdf') }}" target="_blank" rel="noopener">
                                     <i class="fa-solid fa-print white-text right"></i> Resumen
-                                </button>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -160,7 +160,7 @@
                         <div class="col s12 m8 left-align valign-wrapper">
                             <label for="records-per-page" style="margin-right: 10px;">Registros por página:</label>
                             <div class="input-field" style="margin: 0;">
-                                <select id="records-per-page" class="browser-default" onchange="filterKardex()">
+                                <select id="records-per-page" name="perPage" class="browser-default" onchange="this.form.submit()">
                                     <option value="10" {{ request('perPage') == 10 ? 'selected' : '' }}>10</option>
                                     <option value="25" {{ request('perPage') == 25 ? 'selected' : '' }}>25</option>
                                     <option value="50" {{ request('perPage') == 50 ? 'selected' : '' }}>50</option>
@@ -183,6 +183,7 @@
                             </button>
                         </div>
                     </div>
+                    </form>
  
 
                     <!-- Tabla -->
@@ -219,13 +220,13 @@
                                                 {{ $item->producto->descripcion ?? 'N/A' }}</td>
                                             <td>
                                                 <span
-                                                    class="new badge {{ $item->movimiento->tipodocumento->tipomovimiento->descripcion === 'Almacén' ? 'light-blue white-text' : 'yellow' }}"
-                                                    data-badge-caption="{{ $item->movimiento->tipodocumento->nombre }}"
+                                                    class="new badge {{ $item->movimiento?->tipodocumento?->tipomovimiento?->descripcion === 'Almacén' ? 'light-blue white-text' : 'yellow' }}"
+                                                    data-badge-caption="{{ $item->movimiento?->tipodocumento?->nombre ?? 'Movimiento' }}"
                                                     style="color: black">
                                                 </span>
                                             </td>
 
-                                            <td>{{ $item->unidad->descripcion }}</td>
+                                            <td>{{ $item->unidad?->descripcion ?? '—' }}</td>
                                             <td class="inpt-cantidad-mc "> {{ number_format($item->stockanterior, 0) }}
                                             </td>
                                             <td class="inpt-cantidad-mc ">{{ number_format($item->cantidad, 0) }}</td>
@@ -237,11 +238,11 @@
 
                                             <td>{{ $item->fecha }}</td>
                                             <td>
-                                                {{ $item->movimiento->tipodocumento->tipomovimiento->descripcion }} -
-                                                @if ($item->movimiento->movventa)
+                                                {{ $item->movimiento?->tipodocumento?->tipomovimiento?->descripcion ?? '—' }} -
+                                                @if ($item->movimiento?->movventa)
                                                     {{ $item->movimiento->movventa->serie }}-{{ $item->movimiento->numero }}-{{ $item->movimiento->movventa->anio }}
                                                 @else
-                                                    {{ $item->movimiento->numero }}
+                                                    {{ $item->movimiento?->numero ?? '—' }}
                                                 @endif
                                             </td>
 
@@ -249,8 +250,8 @@
 
                                             <td>
                                                 <span
-                                                    class="new badge {{ $item->movimiento->situacion == 'Activado' ? 'green' : 'red' }}"
-                                                    data-badge-caption="{{ $item->movimiento->situacion }}"></span>
+                                                    class="new badge {{ $item->situacion === 'Activado' ? 'green' : 'red' }}"
+                                                    data-badge-caption="{{ $item->situacion }}"></span>
                                             </td>
                                         </tr>
                                     @endforeach

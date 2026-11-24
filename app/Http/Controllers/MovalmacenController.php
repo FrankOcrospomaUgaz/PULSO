@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DetMovalmacen;
 use App\Models\Kardex;
+use App\Models\Listaunidad;
 use App\Models\Movalmacen;
 use App\Models\Movimiento;
 use App\Models\Operacione;
@@ -151,6 +152,8 @@ class MovalmacenController extends Controller
      */
     public function store(Request $request)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch && (int) $request->input('sucursal_id') === $userBranch, 403, 'La sucursal no corresponde al usuario.');
         DB::beginTransaction();
 
         try {
@@ -162,18 +165,46 @@ class MovalmacenController extends Controller
                 'responsable_id' => 'required|exists:persona,id',
                 'persona_id' => 'nullable|exists:persona,id',
                 'comentario' => 'nullable|string',
-                'detalles_productos_json' => 'required|json', // Validación del JSON
+                'detalles_productos_json' => 'required|json',
             ]);
 
             if ($validator->fails()) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'errors' => $validator->errors()
                 ], 422);
             }
 
+            $detalles = json_decode($request->detalles_productos_json, true);
+            if (!is_array($detalles) || $detalles === [] || array_is_list($detalles) === false) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'Agrega al menos un producto válido al movimiento.'], 422);
+            }
+            $detallesValidator = Validator::make(['detalles' => $detalles], [
+                'detalles' => 'required|array|min:1',
+                'detalles.*' => 'required|array',
+                'detalles.*.producto_id' => 'required|integer|exists:producto,id',
+                'detalles.*.unidad_id' => 'required|integer|exists:unidad,id',
+                'detalles.*.cantidad' => 'required|numeric|gt:0',
+                'detalles.*.precio_unitario' => 'nullable|numeric|min:0',
+            ]);
+            if ($detallesValidator->fails()) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => $detallesValidator->errors()], 422);
+            }
+            if (!Persona::whereKey($request->responsable_id)->where('sucursal_id', $userBranch)->exists()
+                || ($request->filled('persona_id') && !Persona::whereKey($request->persona_id)->where('sucursal_id', $userBranch)->exists())) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El responsable o la persona seleccionada no pertenecen a tu sucursal.'], 422);
+            }
+
             // Datos generales
-            $tipodoc = Tipodocumento::find($request->tipo_documento);
+            $tipodoc = Tipodocumento::findOrFail($request->tipo_documento);
+            if (!in_array($tipodoc->abreviatura, ['E', 'S'], true)) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'errors' => 'El documento debe representar una entrada o una salida de almacén.'], 422);
+            }
             $usuario = Auth::user();
             $persona = $request->persona_id ? Persona::find($request->persona_id) : null;
             $responsable = Persona::find($request->responsable_id);
@@ -204,8 +235,15 @@ class MovalmacenController extends Controller
             ]);
 
             // Crear detalles de productos en DetMovalmacen
-            $detalles = json_decode($request->detalles_productos_json, true);
             foreach ($detalles as $detalle) {
+                $producto = Producto::whereKey($detalle['producto_id'] ?? 0)
+                    ->whereHas('relProductosucursal', fn ($q) => $q->where('sucursal_id', $userBranch))
+                    ->lockForUpdate()->firstOrFail();
+                $cantidad = (float) ($detalle['cantidad'] ?? 0);
+                if ($cantidad <= 0) throw new \InvalidArgumentException('Cada cantidad debe ser mayor que cero.');
+                $unidad = Unidad::findOrFail($detalle['unidad_id'] ?? 0);
+                $factor = $this->factorUnidadBase($producto, $unidad->id);
+                $cantidadBase = $cantidad * $factor;
                 $detMovalmacen = DetMovalmacen::create([
                     'movalmacen_id' => $movalmacen->id,
                     'producto_id' => $detalle['producto_id'],
@@ -214,45 +252,38 @@ class MovalmacenController extends Controller
                     'comentario' => $detalle['notas'] ?? ' ',
                     'situacion' => 'A',
                     'sucursal_id' => $request->sucursal_id,
-                    'json_producto' => json_encode([
-                        'producto_nombre' => $detalle['producto_nombre']
-                    ]),
-                    'json_listaunidad' => json_encode([
-                        'unidad_nombre' => $detalle['unidad_nombre']
-                    ]),
+                    'json_producto' => json_encode(['producto_nombre' => $producto->descripcion]),
+                    'json_listaunidad' => json_encode(['unidad_nombre' => $unidad->descripcion]),
                 ]);
                 // Actualizar o crear Stockproducto
-                $stockProducto = Stockproducto::firstOrNew([
-                    'producto_id' => $detalle['producto_id'],
-                    'unidadbase_id' => $detalle['unidad_id'],
-                    'sucursal_id' => $request->sucursal_id,
-                ]);
+                $stockProducto = Stockproducto::where('producto_id', $producto->id)
+                    ->where('unidadbase_id', $producto->unidadbase_id)->where('sucursal_id', $userBranch)
+                    ->lockForUpdate()->first();
+                $stockProducto ??= new Stockproducto(['producto_id' => $producto->id, 'unidadbase_id' => $producto->unidadbase_id, 'sucursal_id' => $userBranch, 'stockbase' => 0]);
                 $stockAnterior = $stockProducto->stockbase ?? 0;
 
                 // Determinar si es entrada o salida
                 if ($tipodoc->abreviatura === 'E') { // Entrada
-                    $stockProducto->stockbase = $stockAnterior + $detalle['cantidad'];
+                    $stockProducto->stockbase = $stockAnterior + $cantidadBase;
                 } elseif ($tipodoc->abreviatura === 'S') { // Salida
-                    $stockProducto->stockbase = $stockAnterior - $detalle['cantidad'];
+                    if ($stockAnterior + 0.000001 < $cantidadBase) throw new \InvalidArgumentException("Stock insuficiente para {$producto->descripcion}. Disponible: {$stockAnterior}; requerido: {$cantidadBase}.");
+                    $stockProducto->stockbase = $stockAnterior - $cantidadBase;
+                } else {
+                    throw new \InvalidArgumentException('Tipo de documento no corresponde a una entrada o salida.');
                 }
                 //dd($tipodoc->abreviatura);
 
                 $stockProducto->save();
-                $producto = Producto::find($detalle['producto_id']);
                 // Crear registro en Kardex
                 Kardex::create([
-                    // 'detalle_id' => $detMovalmacen->id,
+                    'detalle_id' => $detMovalmacen->id,
                     'producto_id' => $detalle['producto_id'],
-                    'json_producto' => json_encode([
-                        $producto
-                    ]),
+                    'json_producto' => json_encode($producto),
                     'unidad_id' => $detalle['unidad_id'],
-                    'json_listaunidad' => json_encode([
-                        'unidad_nombre' => $detalle['unidad_nombre']
-                    ]),
+                    'json_listaunidad' => json_encode(['unidad_nombre' => $unidad->descripcion]),
                     'cantidad' => $detalle['cantidad'],
-                    'unidadbase_id' => $detalle['unidad_id'],
-                    'cantidadbase' => $detalle['cantidad'], // Si la unidad base es igual a la unidad
+                    'unidadbase_id' => $producto->unidadbase_id,
+                    'cantidadbase' => $cantidadBase,
                     'preciounitario' => $detalle['precio_unitario'] ?? 0,
                     'moneda' => $detalle['moneda'] ?? 'PEN',
                     'tipocambio' => $detalle['tipocambio'] ?? 1,
@@ -278,6 +309,9 @@ class MovalmacenController extends Controller
                 'movalmacen' => $movalmacen,
                 'redirect_url' => route('movalmacen.index')
             ]);
+        } catch (\InvalidArgumentException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'errors' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -353,6 +387,8 @@ class MovalmacenController extends Controller
      */
     public function update(Request $request, $id)
     {
+        $userBranch = (int) Auth::user()->persona?->sucursal_id;
+        abort_unless($userBranch, 403, 'El usuario no tiene sucursal asignada.');
         DB::beginTransaction();
 
         try {
@@ -377,6 +413,17 @@ class MovalmacenController extends Controller
             // Obtener el Movalmacen y Movimiento existentes
             $movalmacen = Movalmacen::findOrFail($id);
             $movimiento = $movalmacen->movimiento;
+            abort_unless($userBranch && (int) $movalmacen->sucursal_id === $userBranch, 403, 'El movimiento no corresponde a tu sucursal.');
+            abort_unless((int) $request->sucursal_id === $userBranch, 403, 'La sucursal no corresponde al usuario.');
+            if ($movimiento->getRawOriginal('situacion') !== 'A') throw new \RuntimeException('No se puede editar un movimiento anulado.');
+            if ($request->filled('detalles_productos_json')) {
+                $existingKardex = Kardex::where('movimiento_id', $movimiento->id)->where('situacion', 'A')->exists();
+                if ($existingKardex) throw new \RuntimeException('Este movimiento ya afectó inventario; anúlalo y registra uno nuevo para cambiar sus productos.');
+            }
+            if ((int) $movimiento->tipodocumento_id !== (int) $request->tipo_documento
+                && Kardex::where('movimiento_id', $movimiento->id)->where('situacion', 'A')->exists()) {
+                throw new \RuntimeException('No se puede cambiar el tipo de un movimiento que ya afectó inventario.');
+            }
 
             // Actualizar el Movimiento
             $movimiento->update([
@@ -482,6 +529,21 @@ class MovalmacenController extends Controller
         try {
             $movalmacen = Movalmacen::findOrFail($id);
             $movimiento = Movimiento::find($movalmacen->movimiento_id);
+            $userBranch = (int) Auth::user()->persona?->sucursal_id;
+            abort_unless($userBranch && (int) $movalmacen->sucursal_id === $userBranch, 403, 'El movimiento no corresponde a tu sucursal.');
+            if ($movimiento->getRawOriginal('situacion') !== 'A') throw new \RuntimeException('El movimiento ya está anulado.');
+            $entries = Kardex::where('movimiento_id', $movimiento->id)->where('sucursal_id', $userBranch)->where('situacion', 'A')->lockForUpdate()->get();
+            foreach ($entries->groupBy(fn ($e) => $e->producto_id.'|'.$e->unidadbase_id) as $group) {
+                $entry = $group->first();
+                $stock = Stockproducto::where('producto_id', $entry->producto_id)->where('unidadbase_id', $entry->unidadbase_id)->where('sucursal_id', $userBranch)->lockForUpdate()->firstOrFail();
+                $qty = (float) $group->sum('cantidadbase');
+                $before = (float) $stock->stockbase;
+                $isEntry = Tipodocumento::whereKey($movimiento->tipodocumento_id)->value('abreviatura') === 'E';
+                if ($isEntry && $before + 0.000001 < $qty) throw new \RuntimeException('No se puede anular la entrada: parte del stock ya fue consumido.');
+                $stock->stockbase = $isEntry ? $before - $qty : $before + $qty;
+                $stock->save();
+                foreach ($group as $entryRow) $entryRow->update(['situacion' => 'D']);
+            }
             $movimiento->update(['situacion' => 'D']);
 
             DB::commit();
@@ -525,5 +587,14 @@ class MovalmacenController extends Controller
 
         // Retornar la vista de detalles con los datos obtenidos
         return view('movalmacen.detalles', compact('movalmacen', 'detalles', 'subalmacenes', 'responsables', 'unidades', 'tipos_documento'));
+    }
+
+    private function factorUnidadBase(Producto $producto, int $unidadId): float
+    {
+        if ((int) $producto->unidadbase_id === $unidadId) return 1.0;
+        $factor = Listaunidad::where('producto_id', $producto->id)->where('unidad_id', $unidadId)
+            ->where('unidadbase_id', $producto->unidadbase_id)->value('formula');
+        if (!$factor || (float) $factor <= 0) throw new \InvalidArgumentException("No hay conversión configurada a unidad base para {$producto->descripcion}.");
+        return (float) $factor;
     }
 }

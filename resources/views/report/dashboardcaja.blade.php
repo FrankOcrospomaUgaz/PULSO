@@ -23,8 +23,9 @@
                         <div class="col s12">
                             <div class="card minicard">
                                 <form id="frmMantReporte">
-                                    <input type="hidden" name="_token" value="Qx0rDIGVIW859BWgjaB5k621XZzh9LfWh1ACjVDZ" autocomplete="off">                                <div class="card-content">
+                                    <div class="card-content">
                                         <span class="card-title"><i class="fa-solid fa-magnifying-glass left"></i> Filtros de búsqueda</span>
+                                        <p class="grey-text">Los importes se expresan en PEN; las operaciones en USD se convierten con el tipo de cambio del movimiento. Los ingresos reflejan pagos recibidos, no saldos pendientes.</p>
                                         <div class="row without-tb">
                                              <div class="input-field col s12 m6 l2">
                                                 <input id="fecha_inicio" name="fecha_inicio" type="date"

@@ -14,6 +14,8 @@ class Kernel extends ConsoleKernel
     {
         $schedule->command('backup:run')->cron('45 6 * * *');
         $schedule->command('habitaciones:checkout-reminder')->everyMinute();
+        $schedule->command('clinica:avisos --enviar')->everyThirtyMinutes()->between('07:00', '21:00')->withoutOverlapping()
+            ->when(fn () => (bool) config('services.meta_whatsapp.clinical_automatic'));
     }
 
     /**

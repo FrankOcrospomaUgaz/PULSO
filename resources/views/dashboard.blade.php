@@ -4,6 +4,10 @@ use App\Models\RelSeccionsucursalperfil;
 use App\Models\Seccione;
 use App\Models\Persona;
 use App\Models\RelSeccionsucursal;
+use App\Models\Menuopcione;
+use App\Models\Permisousuario;
+use App\Models\RelSeccionopcionmenu;
+use Illuminate\Support\Facades\Route;
 
 // Obtener el usuario autenticado
 $user = Auth::user();
@@ -12,6 +16,11 @@ $persona = Persona::find($user->persona_id);
 // Obtener la sucursal y perfil directamente del usuario
 $sucursalId = $persona->sucursal_id;
 $perfilId = $user->perfil_id; // Ahora obtenemos perfil_id directamente desde el usuario
+$opcionesPermitidasIds = Permisousuario::where('sucursal_id', $sucursalId)
+    ->where('perfil_id', $perfilId)
+    ->where('situacion', true)
+    ->pluck('menuopcion_id')
+    ->all();
 
 // Obtener las secciones activas y ordenarlas por 'orden'
 $secciones = Seccione::where('situacion', 'A')->orderBy('orden')->get();
@@ -46,12 +55,36 @@ foreach ($secciones as $seccione) {
         }
     }
 
+    // Si el perfil no tiene una opción predeterminada, entrar por la primera
+    // opción de este módulo que sí tenga permiso y una ruta registrada.
+    $menuUrl = null;
+    if ($menuAccion && Route::has($menuAccion . '.index')) {
+        $menuUrl = route($menuAccion . '.index');
+    } else {
+        $opcionEntrada = RelSeccionopcionmenu::where('seccion_id', $seccione->id)
+            ->whereIn('opcionmenu_id', $opcionesPermitidasIds)
+            ->with('menuopcione')
+            ->get()
+            ->pluck('menuopcione')
+            ->filter(fn ($opcion) => $opcion && $opcion->accion && Route::has($opcion->accion . '.index'))
+            ->sortBy('orden')
+            ->first();
+
+        if ($opcionEntrada) {
+            $menuAccion = $opcionEntrada->accion;
+            $menuDescripcion = $opcionEntrada->descripcion;
+            $menuIcono = $opcionEntrada->icono;
+            $menuUrl = route($menuAccion . '.index');
+        }
+    }
+
     // Agregar la sección junto con su acción de menú y descripción
     $seccionesConAcciones[] = [
         'seccion' => $seccione,
         'accion' => $menuAccion,
         'descripcion' => $menuDescripcion,
         'icono' => $menuIcono,
+        'url' => $menuUrl,
     ];
 }
 ?>
@@ -130,7 +163,7 @@ foreach ($secciones as $seccione) {
                                 </div>
                                 <div class="card-action right-align transparent"
                                     style="padding-top: 0!important; border-top: none;">
-                                    <a href="{{ $menuAccion ? route($menuAccion . '.index') : '#' }}"
+                                    <a href="{{ $seccionConAccion['url'] ?? '#' }}"
                                         class="btn waves-effect waves-light teal lighten-1 btn-acceder-modulo
                                     btn-cargar-crud"
                                         data-icono="{{ $menuIcono }}" data-modulo="{{ $seccione->descripcion }}"

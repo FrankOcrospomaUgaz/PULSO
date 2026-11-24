@@ -25,15 +25,22 @@ class CuentaCobrarpagarService
             return;
         }
 
+        $tipo = self::tipoCuenta($movcaja);
+        if ($movcaja->movimiento->getRawOriginal('situacion') !== 'A') {
+            CuentaCobrarpagar::withTrashed()->where('movcaja_id', $movcaja->id)->where('tipo', $tipo)
+                ->update(['situacion' => 'D']);
+            return;
+        }
+
         $deudas = $movcaja->detMovcaja
             ->filter(fn($detalle) => strcasecmp((string) $detalle->tipo, 'Deuda') === 0);
 
         if ($deudas->isEmpty()) {
-            CuentaCobrarpagar::withTrashed()->where('movcaja_id', $movcaja->id)->forceDelete();
+            CuentaCobrarpagar::withTrashed()->where('movcaja_id', $movcaja->id)->where('tipo', $tipo)
+                ->update(['situacion' => 'D']);
             return;
         }
 
-        $tipo = self::tipoCuenta($movcaja);
         $pagado = self::totalPagado($movcaja);
         $total = (float) $movcaja->total;
         $estado = $pagado <= 0 ? 'NUEVO' : ($pagado >= $total ? 'PAGADO' : 'PAGANDO');
@@ -66,7 +73,6 @@ class CuentaCobrarpagarService
             $cuenta->restore();
         }
 
-        self::sincronizarDetallesPagos($cuenta, $movcaja);
     }
 
     private static function tablasDisponibles(): bool
@@ -99,6 +105,7 @@ class CuentaCobrarpagarService
         $pagosPosteriores = DetCuentaCobrarpagar::whereHas('cuenta', function ($query) use ($movcaja) {
             $query->where('movcaja_id', $movcaja->id);
         })
+            ->whereIn('det_cuenta_cobrarpagar.situacion', ['A', 'E'])
             ->whereHas('movcaja.movimiento', fn($query) => $query->where('situacion', 'A'))
             ->with('movcaja')
             ->get()
@@ -116,18 +123,12 @@ class CuentaCobrarpagarService
         $fechaPosterior = DetCuentaCobrarpagar::whereHas('cuenta', function ($query) use ($movcaja) {
             $query->where('movcaja_id', $movcaja->id);
         })
+            ->whereIn('det_cuenta_cobrarpagar.situacion', ['A', 'E'])
             ->whereHas('movcaja.movimiento', fn($query) => $query->where('situacion', 'A'))
             ->with('movcaja')
             ->get()
             ->max(fn($detalle) => $detalle->movcaja->created_at);
 
         return $fechaPosterior ?? $fechaInicial ?? now();
-    }
-
-    private static function sincronizarDetallesPagos(CuentaCobrarpagar $cuenta, Movcaja $movcaja): void
-    {
-        DetCuentaCobrarpagar::where('cuenta_cobrarpagar_id', $cuenta->id)
-            ->where('movcaja_id', $movcaja->id)
-            ->delete();
     }
 }

@@ -111,12 +111,19 @@
                             <tbody>
                                 @foreach ($solicituds as $solicitud)
                                     <tr>
-                                        <td class="center">{{ $solicitud->tipo_documento == 'B' ? 'Boleta' : 'Factura' }}
+                                        @php
+                                            $tipoDocumentoVista = $solicitud->tipo_documento;
+                                            if ($tipoDocumentoVista === 'N') {
+                                                $dataSolicitud = json_decode($solicitud->data, true) ?: [];
+                                                $tipoDocumentoVista = data_get($dataSolicitud, 'documento_afectado.tipo_documento_pulso', 'N');
+                                            }
+                                        @endphp
+                                        <td class="center">{{ ['B' => 'Boleta', 'F' => 'Factura', 'N' => 'Nota de crédito'][$solicitud->tipo_documento] ?? 'Comprobante' }}
                                         </td>
 
-                                        <td class="center">{{ $solicitud->tipo_documento . $solicitud->serie . '-' . $solicitud->correlativo }}</td>
-                                        <td class="center">{{ $solicitud->persona->personamaestro->nrodoc }}</td>
-                                        <td class="center">{{ $solicitud->movimiento->persona }}</td>
+                                        <td class="center">{{ $tipoDocumentoVista . $solicitud->serie . '-' . str_pad((string) $solicitud->correlativo, 8, '0', STR_PAD_LEFT) }}</td>
+                                        <td class="center">{{ $solicitud->persona?->personamaestro?->nrodoc ?? '—' }}</td>
+                                        <td class="center">{{ $solicitud->movimiento?->persona ?? '—' }}</td>
                                         <td class="center">{{ $solicitud->moneda }}</td>
                                         <td class="center inpt-cantidad-mc">{{ $solicitud->total }}</td>
                                         <td class="center">
@@ -169,6 +176,9 @@
                                         <td class="center">
                                             @foreach ($operaciones as $operacion)
                                                 @if ($operacion->tipo == 'Registro')
+                                                    @if ($solicitud->tipo_documento === 'N' && $operacion->accion === 'comprobante.generarPDF')
+                                                        @continue
+                                                    @endif
                                                     @if ($operacion->accion === 'comprobante.generarPDF')
                                                         <a href="{{ route($operacion->accion, $solicitud->movimiento->movventa->id) }}"
                                                             class="btn-floating {{ $operacion->color }} darken-1 waves-light tooltipped"
@@ -186,6 +196,21 @@
                                                     @endif
                                                 @endif
                                             @endforeach
+
+                                            @if (in_array($solicitud->tipo_documento, ['B', 'F'], true) && in_array($solicitud->estado, ['M', 'T'], true))
+                                                <a href="{{ route('solicitud.notaCredito.create', $solicitud->id) }}" class="btn-floating amber darken-2 waves-effect waves-light tooltipped" data-tooltip="Emitir nota de crédito">
+                                                    <i class="fa-solid fa-file-circle-minus"></i>
+                                                </a>
+                                            @elseif ($solicitud->tipo_documento === 'N')
+                                                <a href="{{ route('solicitud.downloadXml', $solicitud->id) }}" class="btn-floating blue darken-2 waves-effect waves-light tooltipped" data-tooltip="Descargar XML">
+                                                    <i class="fa-solid fa-file-code"></i>
+                                                </a>
+                                                @if ($solicitud->nombre)
+                                                    <a href="{{ route('solicitud.downloadCdr', $solicitud->id) }}" class="btn-floating green darken-2 waves-effect waves-light tooltipped" data-tooltip="Descargar CDR">
+                                                        <i class="fa-solid fa-file-circle-check"></i>
+                                                    </a>
+                                                @endif
+                                            @endif
 
                                             <a href="#!"
                                                  class="btn-floating blue darken-1 waves-light tooltipped btn-ver-respuesta-sunat"

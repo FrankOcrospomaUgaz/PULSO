@@ -64,6 +64,7 @@
                                     <th class="no-hide">IGV</th>
                                     <th class="no-hide">P. unit.</th>
                                     <th class="no-hide">Importe</th>
+                                    <th>Vencimiento</th>
                                     <th>Notas</th>
                                     <th class="center all">
                                         <button class="btn btn-floating btn-small tooltipped white"
@@ -92,6 +93,7 @@
                                         <td><span class="inpt-cantidad-mc igv">{{ number_format($igvLinea, 2) }}</span></td>
                                         <td><span class="inpt-cantidad-mc precio-unitario">{{ number_format($precioUnitario, 2) }}</span></td>
                                         <td><span class="inpt-cantidad-mc precio-total">{{ number_format($detalle->monto, 2) }}</span></td>
+                                        <td><input type="date" class="fecha-vencimiento" value="{{ $jsonProducto['fecha_vencimiento'] ?? $jsonProducto['fechavencimiento'] ?? '' }}" onclick="event.stopPropagation();" onchange="sincronizarDetallesCompraDesdeTabla();"></td>
                                         <td>{{ $detalle->comentario }}</td>
                                         <td>
                                             <button type="button" class="btn btn-floating btn-small red white-text tooltipped"
