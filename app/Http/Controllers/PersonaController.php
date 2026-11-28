@@ -35,21 +35,10 @@ class PersonaController extends Controller
 public function index(Request $request)
 {
     $search = $request->input('search');
-    $no_grato = $request->input('no_grato');
     $sucursal_id = Auth::user()->persona->sucursal_id;
     $perPage = request()->input('perPage', 10);
     $query = Persona::with('personamaestro')
         ->where('sucursal_id', $sucursal_id);
-
-    if ($no_grato !== null && $no_grato !== '' && $no_grato !== 'Todos') {
-        if ($no_grato === '1' || $no_grato === 'SI' || $no_grato === 'true') {
-            $query->where('no_grato', true);
-        } elseif ($no_grato === '0' || $no_grato === 'NO' || $no_grato === 'false') {
-            $query->where(function ($q) {
-                $q->where('no_grato', false)->orWhereNull('no_grato');
-            });
-        }
-    }
 
     if ($search) {
         // Búsqueda tanto en tabla persona como en personamaestro
@@ -330,7 +319,6 @@ public function index(Request $request)
                             'email' => $request->input('email') ?: null,
                             'telefonofijo' => $request->input('telefonofijo') ?: '-',
                             'telefonomovil' => $request->input('telefonomovil') ?: '-',
-                            'no_grato' => $request->has('no_grato'),
                             'distrito_id' => $request->input('distrito_id'),
                         ]);
                     }
@@ -345,7 +333,6 @@ public function index(Request $request)
                         'telefonomovil'     => $request->input('telefonomovil') ?: '-',
                         'imagen'            => '-',
                         'compartido'        => $request->input('compartido', 'N'),
-                        'no_grato'          => $request->has('no_grato') ? true : false,
                         'personamaestro_id' => $personamaestro->id,
                         'sucursal_id'       => $sucursal_id,
                         'distrito_id'       => $request->input('distrito_id'),
@@ -377,7 +364,6 @@ public function index(Request $request)
                     'imagen'            => '-',
                     'compartido'        => $request->input('compartido', 'N'),
                     'personamaestro_id' => $personamaestro->id,
-                    'no_grato'          => $request->has('no_grato') ? true : false,
 
                     'sucursal_id'       => $sucursal_id,
                     'distrito_id'       => $request->input('distrito_id'),
@@ -631,7 +617,6 @@ public function index(Request $request)
                 'telefonofijo'      => $request->input('telefonofijo') ?: '-',
                 'telefonomovil'     => $request->input('telefonomovil') ?: '-',
                 'compartido'        => $request->input('compartido', 'N'),
-                'no_grato'          => $request->has('no_grato') ? true : false,
                 'sucursal_id'       => $sucursal_id,
                 'distrito_id'       => $request->input('distrito_id'),
                 'personamaestro_id' => $personamaestro->id,

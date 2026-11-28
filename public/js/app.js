@@ -7,14 +7,13 @@ let codigoGenerado = null;
 function filterHuesped() {
     const tipoPersona = document.getElementById('tipopersona').value;
     const genero = document.getElementById('genero').value;
-    const noGrato = document.getElementById('no_grato') ? document.getElementById('no_grato').value : 'Todos';
     const searchQuery = document.getElementById('search-input').value.trim();
     const recordsPerPage = document.getElementById('records-per-page').value;
 
     mostrarPantallaDeCarga();
 
     // Usar la URL del index de huéspedes
-    const url = `/huesped?tipopersona=${tipoPersona}&genero=${genero}&no_grato=${noGrato}&search=${encodeURIComponent(searchQuery)}&perPage=${recordsPerPage}`;
+    const url = `/huesped?tipopersona=${tipoPersona}&genero=${genero}&search=${encodeURIComponent(searchQuery)}&perPage=${recordsPerPage}`;
 
     fetch(url, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -13068,14 +13067,12 @@ function generatePDFReportHuesped() {
     // Obtener los valores de los filtros
     var tipopersona = document.getElementById('tipopersona').value;
     var genero = document.getElementById('genero').value;
-    var noGrato = document.getElementById('no_grato') ? document.getElementById('no_grato').value : 'Todos';
     var search = document.getElementById('search-input').value;
     var perPage = document.getElementById('records-per-page').value;
 
     // Construir la URL del PDF
     var url = '/generarPDF/huesped?tipopersona=' + encodeURIComponent(tipopersona)
         + '&genero=' + encodeURIComponent(genero)
-        + '&no_grato=' + encodeURIComponent(noGrato)
         + '&search=' + encodeURIComponent(search)
         + '&perPage=' + encodeURIComponent(perPage);
 
@@ -15134,11 +15131,6 @@ function realizarBusqueda() {
     const perPageSelect = document.getElementById('records-per-page');
     const perPage = perPageSelect ? perPageSelect.value : 10;
     params.set('perPage', perPage);
-
-    const noGratoSelect = document.getElementById('no_grato');
-    if (noGratoSelect) {
-        params.set('no_grato', noGratoSelect.value);
-    }
 
     agregarFiltrosHabitacionAParams(params);
     agregarFiltrosMovcompraAParams(params);

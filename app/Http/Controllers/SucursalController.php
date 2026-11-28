@@ -944,23 +944,12 @@ class SucursalController extends Controller
     {
         $perPage = $request->input('perPage', 10); // Registros por página
         $search = $request->input('search'); // Texto de búsqueda
-        $no_grato = $request->input('no_grato');
 
         $query = Persona::with('personamaestro', 'rolpersonas')
             ->whereHas('rolpersonas', function ($q) {
                 $q->where('rol_id', 1); // Rol de responsable
             })
             ->where('sucursal_id', $id);
-
-        if ($no_grato !== null && $no_grato !== '' && $no_grato !== 'Todos') {
-            if ($no_grato === '1' || $no_grato === 'SI' || $no_grato === 'true') {
-                $query->where('no_grato', true);
-            } elseif ($no_grato === '0' || $no_grato === 'NO' || $no_grato === 'false') {
-                $query->where(function ($q) {
-                    $q->where('no_grato', false)->orWhereNull('no_grato');
-                });
-            }
-        }
 
         // 🔹 Búsqueda case-insensitive
         if ($search) {
@@ -986,7 +975,6 @@ class SucursalController extends Controller
 
         $personas = $query->paginate($perPage)->appends([
             'search' => $request->input('search'),
-            'no_grato' => $request->input('no_grato'),
             'perPage' => $perPage
         ]);
 

@@ -242,7 +242,7 @@ Pasaporte
             ) !!}
         </div>
     </div>
-    {{-- BLOQUE DE ROLES Y PERSONA NO GRATA DEBAJO --}}
+    {{-- Roles de la persona --}}
     @isset($roles)
         @if ($accion === 'CHECKIN' || $accion === 'CRUD' || $accion === 'CLINICA')
             @php
@@ -283,17 +283,6 @@ Pasaporte
                 </div>
            
         @endif
-          <!-- Persona no grata -->
-                    <div class="col s12 m6 l4">
-                        <p class="without-tb left-align">
-                            <label class="truncate" for="no_grato">
-                                <input class="filled-in red-text" id="no_grato" name="no_grato" type="checkbox"
-                                    value="S" {{ old('no_grato', $persona->no_grato ?? false) ? 'checked' : '' }}>
-                                <span class="red-text text-darken-2">Persona no grata</span>
-                                <span class="helper-text" id="no_grato_spn" data-error="" data-success=""></span>
-                            </label>
-                        </p>
-                    </div>
     @endisset
 
     @if (!empty($registroClinico))

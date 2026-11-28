@@ -44,7 +44,7 @@ class   Persona extends Model
      *
      * @var array
      */
-    protected $fillable = ['nombres', 'apellidos', 'direccion', 'email', 'telefonofijo', 'telefonomovil', 'imagen', 'compartido', 'personamaestro_id', 'sucursal_id', 'distrito_id', 'no_grato'];
+    protected $fillable = ['nombres', 'apellidos', 'direccion', 'email', 'telefonofijo', 'telefonomovil', 'imagen', 'compartido', 'personamaestro_id', 'sucursal_id', 'distrito_id'];
 
 
     /**

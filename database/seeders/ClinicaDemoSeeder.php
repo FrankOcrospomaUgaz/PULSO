@@ -52,7 +52,6 @@ class ClinicaDemoSeeder extends Seeder
                         'telefonomovil' => $phone,
                         'imagen' => '-',
                         'compartido' => 'N',
-                        'no_grato' => false,
                         'distrito_id' => $districtId,
                     ]
                 );

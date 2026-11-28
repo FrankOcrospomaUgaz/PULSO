@@ -47,7 +47,7 @@
 
                     <!-- Contenedor del selector de registros por página y botones de expansión/filtros -->
                     <div class="row valign-wrapper" style="margin-bottom: 10px;">
-                        <!-- Selector de registros y Filtro No Grato -->
+                        <!-- Selector de registros -->
                         <div class="col s12 m8 l8 left-align valign-wrapper" style="padding-left:13px; gap: 15px; flex-wrap: wrap;">
                             <div style="display: flex; align-items: center;">
                                 <span style="margin-right: 8px;">Registros por página:</span>
@@ -57,16 +57,6 @@
                                         <option value="25" {{ request('perPage') == 25 ? 'selected' : '' }}>25</option>
                                         <option value="50" {{ request('perPage') == 50 ? 'selected' : '' }}>50</option>
                                         <option value="100" {{ request('perPage') == 100 ? 'selected' : '' }}>100</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div style="display: flex; align-items: center;">
-                                <span style="margin-right: 8px;">Condición:</span>
-                                <div class="input-field" style="margin: 0;">
-                                    <select id="no_grato" name="no_grato" class="browser-default" onchange="realizarBusqueda()">
-                                        <option value="Todos" {{ request('no_grato') == 'Todos' || !request('no_grato') ? 'selected' : '' }}>Todos</option>
-                                        <option value="0" {{ request('no_grato') === '0' ? 'selected' : '' }}>Persona Grata</option>
-                                        <option value="1" {{ request('no_grato') === '1' ? 'selected' : '' }}>Persona No Grata</option>
                                     </select>
                                 </div>
                             </div>
@@ -106,7 +96,6 @@
                                         <th>Teléfono Móvil</th>
                                         <th>Imagen</th>
                                         <th>Compartido</th>
-                                        <th class="no-hide">Condición</th>
                                         <th>Operaciones</th>
                                     </tr>
                                 </thead>
@@ -132,14 +121,6 @@
                                             <td>{{ $persona->telefonomovil }}</td>
                                             <td>{{ $persona->imagen }}</td>
                                             <td>{{ $persona->compartido }}</td>
-                                            <td>
-                                                @if ($persona->no_grato)
-                                                    <span class="badge red white-text" style="display: inline-flex; align-items: center; justify-content: center; float: none; margin: 0; padding: 4px 10px; border-radius: 6px; font-weight: bold; line-height: 1;">No Grata</span>
-                                                @else
-                                                    <span class="badge green white-text" style="display: inline-flex; align-items: center; justify-content: center; float: none; margin: 0; padding: 4px 10px; border-radius: 6px; font-weight: bold; line-height: 1;">Grata</span>
-                                                @endif
-                                            </td>
-
                                             <td>
                                                 @foreach ($operaciones as $operacion)
                                                     @if ($operacion->tipo == 'Registro')
