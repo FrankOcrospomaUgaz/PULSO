@@ -18,7 +18,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property $updated_at
  * @property $deleted_at
  *
- * @property Movreserva[] $movreservas
  * @property SalonPackage[] $salonPackages
  * @property SalonService[] $salonServices
  * @package App
@@ -43,11 +42,6 @@ class Salon extends Model
     /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
-    public function movreservas()
-    {
-        return $this->hasMany(\App\Models\Movreserva::class, 'id', 'salon_id');
-    }
-    
     /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */

@@ -297,39 +297,22 @@
                                         <div class="col s12 m12 l3">
                                             <div class="card minicard bg-secondary rounded-card">
                                                 <div class="card-content white-text" style="height:348px; overflow-y:auto;">
-                                                    <span class="card-supertitle">
-                                                        <font>{{ $pendientesAlojamientoCount ?? 0 }}</font>
-                                                        <i class="fa-solid fa-bed right"></i>
-                                                    </span>
-
-                                                    <p class="bold">Alojamientos pendientes de pago</p>
-
+                                                    <span class="card-title white-text">Ingresos por medio de pago</span>
                                                     <ul class="without-bottom white-text">
-                                                        @foreach ($pendientesPorPiso as $pisoPendiente)
-                                                                <li class="mb5">
-                                                                    {{ $pisoPendiente['piso'] }}
-                                                                   <span class="new badge right orange lighten-1 badge-cantidad"
-      data-badge-caption="{{ $pisoPendiente['cantidad'] }}">
-</span>
-
-                                                                </li>
-                                                            @endforeach
+                                                        @forelse ($resumenMetodosPago as $medio)
+                                                            <li class="mb5">{{ $medio->mediopago }}
+                                                                <span class="right">PEN {{ number_format($medio->total, 2) }}</span>
+                                                            </li>
+                                                        @empty
+                                                            <li>Sin movimientos registrados.</li>
+                                                        @endforelse
                                                     </ul>
-                                                 
-                                                </div>
-
-                                                <div class="card-action right-align">
-                                                    <button href="{{ route('movhabitacion.index') }}" class="btn btn-cargar-crud white btn-revisar-secondary"
-                                                            data-titulo="Habitaciones" data-icono="fa-solid fa-plus left">
-                                                        <strong>Revisar</strong>
-                                                        <i class="fa-solid fa-caret-right right"></i>
-                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {{-- CARDS CENTRALES --}} <div class="col s12 m12 l5">
-                                            <div class="row without-tb"> @php $cardsCentro = [ [ "titulo" => "Checkouts", "valor" => $checkoutsHoyCount ?? 0, "icon" => "circle-arrow-up", "sub" => "para hoy", "url" => route('movhabitacion.index'), "dataTitulo" => "Habitaciones", "dataIcono" => "fa-solid fa-bed left" ], [ "titulo" => "Reservas", "valor" => $reservasHoyCount ?? 0, "icon" => "calendar-day", "sub" => "para hoy", "url" => route('movreserva.index'), "dataTitulo" => "Reservas", "dataIcono" => "fa-solid fa-calendar-day left" ], [ "titulo" => "Cuentas por cobrar", "valor" => $cobrarCount ?? 0, "icon" => "hand-holding-dollar", "sub" => "PEN " . number_format($cobrarTotal ?? 0, 2), "url" => route('cuentas.cobrar.index'), "dataTitulo" => "Cuentas por cobrar", "dataIcono" => "fa-solid fa-hand-holding-dollar left" ], [ "titulo" => "Cuentas por pagar", "valor" => $deudasCount ?? 0, "icon" => "coins", "sub" => "PEN " . number_format($deudasTotal ?? 0, 2), "url" => route('cuentas.pagar.index'), "dataTitulo" => "Cuentas por pagar", "dataIcono" => "fa-solid fa-coins left" ], ]; @endphp @foreach ($cardsCentro as $card)
+                                            <div class="row without-tb"> @php $cardsCentro = [ [ "titulo" => "Cuentas por cobrar", "valor" => $cobrarCount ?? 0, "icon" => "hand-holding-dollar", "sub" => "PEN " . number_format($cobrarTotal ?? 0, 2), "url" => route('cuentas.cobrar.index'), "dataTitulo" => "Cuentas por cobrar", "dataIcono" => "fa-solid fa-hand-holding-dollar left" ], [ "titulo" => "Cuentas por pagar", "valor" => $deudasCount ?? 0, "icon" => "coins", "sub" => "PEN " . number_format($deudasTotal ?? 0, 2), "url" => route('cuentas.pagar.index'), "dataTitulo" => "Cuentas por pagar", "dataIcono" => "fa-solid fa-coins left" ], ]; @endphp @foreach ($cardsCentro as $card)
                                                     <div class="col s12 m6 l6">
                                                         <div class="card minicard bg-primary rounded-card">
                                                             <div class="card-content white-text" style="padding:16px!important">
@@ -391,7 +374,7 @@
                                 <div class="col s12 l2" id="movcaja-operaciones">
                                     <div class="opciones row without-tb">
 
-                                        
+
 
                                         @isset($caja_id)
                                             @foreach ($operaciones as $operacion)
@@ -625,7 +608,7 @@
                                                     @php
                                                         // Obtener el último turno activo o cerrado para la caja actual
                                                         $ultimoTurno = \App\Models\RelTurnocaja::where('situacion', 'A') // Turno activo
-                                                         
+
                                                             ->whereHas('movcajainicio', function ($query) use (
                                                                 $movcaja,
                                                             ) {
@@ -633,7 +616,7 @@
                                                             })->where('sucursal_id', $movcaja->sucursal_id)
                                                             ->latest('fechainicio') // último turno
                                                             ->first();
-                                                            
+
                                                         // Obtener movimientos solo del último turno
                                                         $movimientosCierre = \App\Models\Movcaja::with([
                                                             'detMovcaja.Mediopago',
@@ -675,7 +658,7 @@
 
                                                                         $itemsAgrupados = $items->groupBy(function ($item) {
                                                                             // 🔥 SI ES BILLETERA DIGITAL → agrupar por billetera
-                                                                        
+
                                                                             $medioDescripcion = data_get($item, 'Mediopago.descripcion') ?? $item->mediopago ?? '';
                                                                             if (
                                                                                 strtolower((string) $medioDescripcion) === 'billetera digital'
@@ -724,7 +707,7 @@
     <ul style="list-style-type:none; padding-left:0;">
         @foreach ($detallesAgrupadosCierre as $grupo)
             <li style="margin-bottom:12px;">
-                
+
                 {{-- ÍCONO + TÍTULO --}}
                 @if ($grupo['nota'] === 'Apertura de caja')
                     <i class="fa-solid fa-cash-register" style="color:#FFA000;"></i>
@@ -868,18 +851,7 @@
                                                                 {!! $operacion->imagen !!}
                                                             </a>
                                                         @endif
-                                                        @if (
-                                                            $operacion->accion == 'movventa.alojamiento' &&
-                                                                optional($movcaja->movventa)->movhabitacion &&
-                                                                $movcaja->movimiento->situacion == 'Activado')
-                                                            <a href="{{ route($operacion->accion, $movcaja->movventa->id) }}"
-                                                                class="btn-floating {{ $operacion->color }} darken-1 waves-light btn-cargar-crud tooltipped"
-                                                                data-icono="{{ $operacion->imagen }}"
-                                                                data-titulo="{{ $operacion->descripcion }}"
-                                                                data-tooltip="{{ $operacion->comentario }}">
-                                                                {!! $operacion->imagen !!}
-                                                            </a>
-                                                        @endif
+
 
                                                         @if ($operacion->accion === 'movcaja.verDetalles')
                                                             <a href="{{ route($operacion->accion, $movcaja->id) }}"

@@ -113,11 +113,7 @@ foreach ($secciones as $seccione) {
                 <div class="row" style="margin-top: -15px">
                     <div class="col s12 mb20">
                         <br>
-                        <p>
-                            ¡No pierdas la oportunidad de transformar tu hotel con Hotel Hub! Descubre cómo nuestro
-                            innovador sistema puede elevar tu negocio al siguiente nivel, destacando en el competitivo
-                            mundo hotelero. ¡El éxito está a solo un clic de distancia!
-                        </p>
+                        <p>Administra en un solo lugar la atención, las citas y la operación de tu organización.</p>
                     </div>
                 </div>
 
@@ -147,10 +143,6 @@ foreach ($secciones as $seccione) {
 
                                     <p style="margin-top: 15px;" class="truncate">
                                         {{ $seccione->subtitulo }}
-                                        @if ($seccione->descripcion === 'Hotel Inteligente')
-                                            <span class="new badge bg-secondary white-text"
-                                                data-badge-caption="NUEVO"></span>
-                                        @endif
                                     </p>
                                 </div>
 

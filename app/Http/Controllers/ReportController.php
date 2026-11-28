@@ -7,12 +7,8 @@ use App\Models\Caja;
 use App\Models\Categorium;
 use App\Models\DetMovcaja;
 use App\Models\DetMovventum;
-use App\Models\Habitacion;
 use App\Models\Mediopago;
 use App\Models\Movcaja;
-use App\Models\Movhabitacion;
-use App\Models\MovhabitacionHabitacion;
-use App\Models\MovreservaHabitacion;
 use App\Models\Movventum;
 use App\Models\Movimiento;
 use App\Models\Operacione;
@@ -20,7 +16,6 @@ use App\Models\Persona;
 use App\Models\Producto;
 use App\Models\RelTurnocaja;
 use App\Models\Sucursal;
-use App\Models\Tipohabitacion;
 use App\Models\Tipodocumento;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
@@ -47,7 +42,6 @@ class ReportController extends Controller
             ->get();
         $tipodocumentos = Tipodocumento::where('tipomovimiento_id', 2)->get();
         $mediopagos = Mediopago::where('situacion', true)->orderBy('descripcion')->get();
-        $habitaciones = Habitacion::where('sucursal_id', $sucursal_id)->orderBy('numero')->get();
         $recepcionistasmodel = DB::table('persona as p')
             ->select('p.id')
             ->distinct()
@@ -70,7 +64,6 @@ class ReportController extends Controller
             'relTurnocajas',
             'tipodocumentos',
             'mediopagos',
-            'habitaciones',
             'responsables'
         ));
     }
@@ -164,22 +157,6 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
         $moneda = $request->input('moneda');
         if ($moneda) {
             $query->where('moneda', $moneda);
-        }
-
-        $origen = $request->input('origen_venta');
-        if ($origen === 'ALOJAMIENTO') {
-            $query->whereNotNull('movhabitacion_id');
-        } elseif ($origen === 'RESERVA') {
-            $query->whereNotNull('movreserva_id');
-        } elseif ($origen === 'DIRECTA') {
-            $query->whereNull('movhabitacion_id')->whereNull('movreserva_id');
-        }
-
-        $habitacionId = $request->input('habitacion_id');
-        if (!empty($habitacionId)) {
-            $query->whereHas('movhabitacion.habitaciones', function ($q) use ($habitacionId) {
-                $q->where('habitacion.id', $habitacionId);
-            });
         }
 
         $query->whereHas('movimiento', function ($q) use ($inicio, $fin, $request) {
@@ -477,13 +454,6 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
 
     private function resolveOrigen(Movventum $movventa): string
     {
-        if (!empty($movventa->movhabitacion_id)) {
-            return 'Alojamiento - ' .  $movventa->movhabitacion->movimiento->numero;
-        }
-        if (!empty($movventa->movreserva_id)) {
-            return 'Reserva';
-        }
-
         return 'Directa';
     }
 
@@ -1611,128 +1581,43 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
     {
         $personaId = $request->input('persona_id');
         $categoriaId = $request->input('categoria_id');
-
         $query = $this->baseMovventaQuery($sucursalId, $request, $inicio, $fin)
-            ->with([
-                'detMovventas.producto.categorium',
-                'movimiento.Persona.personamaestro',
-                'movhabitacion.habitacion',
-                'movhabitacion.habitaciones',
-                'movhabitacion.movhabitacion_habitacion.habitacion',
-            ]);
+            ->with(['detMovventas.producto.categorium', 'movimiento.Persona.personamaestro']);
 
-        if (!empty($personaId)) {
-            $query->whereHas('movimiento', function ($q) use ($personaId) {
-                $q->where('persona_id', $personaId);
-            });
+        if ($personaId) {
+            $query->whereHas('movimiento', fn ($q) => $q->where('persona_id', $personaId));
         }
 
-        $movventas = $query->get();
-        $columns = [
-            'Cliente',
-            'Habitacion',
-            'Estadia',
-            'Precio real (PEN)',
-            'P. alquilado (PEN)',
-            'Subtotal (PEN)',
-            'Descuento total (PEN)',
-        ];
-
+        $columns = ['Cliente', 'Producto', 'Cantidad', 'Precio unitario', 'Subtotal', 'Descuento'];
         $rows = [];
         $detalleRows = [];
         $totalSubtotal = 0.0;
         $totalDescuento = 0.0;
 
-        foreach ($movventas as $movventa) {
+        foreach ($query->get() as $movventa) {
             $movimiento = $movventa->movimiento;
-            $persona = $movimiento ? $movimiento->Persona : null;
-            $doc = $persona && $persona->personamaestro ? $persona->personamaestro->nrodoc : '';
-            $nombre = $movimiento->persona ?? '';
-            $clienteLabel = trim($doc . ' - ' . $nombre);
-            if ($clienteLabel === '' || $clienteLabel === '-') {
-                $clienteLabel = 'N/A';
-            }
-
-            $habitacionLabel = 'N/A';
-            $movhabitacion = $movventa->movhabitacion;
-            if ($movhabitacion) {
-                $habitaciones = collect();
-                $relaciones = $movhabitacion->movhabitacion_habitacion ?? collect();
-                if ($relaciones->count()) {
-                    $relacionesFiltradas = $relaciones->filter(function ($relacion) use ($movventa) {
-                        return empty($relacion->movventa_id) || (int) $relacion->movventa_id === (int) $movventa->id;
-                    });
-                    $relacionesUsar = $relacionesFiltradas->count() ? $relacionesFiltradas : $relaciones;
-                    $habitaciones = $relacionesUsar->map(function ($relacion) {
-                        return $relacion->habitacion;
-                    })->filter();
-                }
-
-                if ($habitaciones->isEmpty() && !empty($movhabitacion->habitaciones)) {
-                    $habitaciones = $movhabitacion->habitaciones;
-                }
-
-                if ($habitaciones->isEmpty() && $movhabitacion->habitacion) {
-                    $habitaciones = collect([$movhabitacion->habitacion]);
-                }
-
-                if ($habitaciones->isNotEmpty()) {
-                    $habitacionLabel = $habitaciones->map(function ($habitacion) {
-                        $numero = $habitacion->numero ?? '';
-                        $descripcion = $habitacion->descripcion ?? '';
-                        $label = $numero !== '' ? $numero : $descripcion;
-                        return trim($label);
-                    })->filter()->unique()->implode(', ');
-                }
-            }
+            $persona = $movimiento?->Persona;
+            $doc = $persona?->personamaestro?->nrodoc ?? '';
+            $cliente = trim($doc . ' - ' . ($movimiento?->persona ?? '')) ?: 'N/A';
 
             foreach ($movventa->detMovventas as $detalle) {
-                if ((float) $detalle->dcto_porcentaje <= 0) {
-                    continue;
-                }
-                if ($categoriaId && $detalle->producto && (string) $detalle->producto->categoria_id !== (string) $categoriaId) {
-                    continue;
-                }
-
+                if ((float) $detalle->dcto_porcentaje <= 0) continue;
+                if ($categoriaId && $detalle->producto && (string) $detalle->producto->categoria_id !== (string) $categoriaId) continue;
                 $cantidad = (float) $detalle->cantidad;
                 $subtotal = (float) $detalle->monto;
                 $original = (float) ($detalle->monto_original ?? $detalle->monto);
                 $descuento = max($original - $subtotal, 0);
-                $precioVendido = $cantidad > 0 ? $subtotal / $cantidad : 0;
-
-                $precioReal = $movhabitacion ? ($movhabitacion->movhabitacion_habitacion->first()->tarifa ?? $movhabitacion->preciohabitacion ?? 0) : 0;
-                $estadiaLabel = 'N/A';
-                if ($movhabitacion) {
-                    $dias = (float) ($movhabitacion->dias ?? 0);
-                    $horas = (float) ($movhabitacion->horas ?? 0);
-                    if ($dias > 0) {
-                        $estadiaLabel = round($dias) . ' ' . (round($dias) === 1 ? 'noche' : 'noches');
-                    } elseif ($horas > 0) {
-                        $estadiaLabel = round($horas) . ' ' . (round($horas) === 1 ? 'hora' : 'horas');
-                    }
-                }
-
+                $precio = $cantidad > 0 ? $subtotal / $cantidad : 0;
                 $row = [
-                    'cliente' => $clienteLabel,
-                    'habitacion' => $habitacionLabel,
-                    'estadia' => $estadiaLabel,
-                    'precio_real' => $this->formatMoney($precioReal),
-                    'precio_vendido' => $this->formatMoney($precioVendido),
+                    'cliente' => $cliente,
+                    'producto' => $detalle->producto->descripcion ?? $detalle->descripcion ?? '—',
+                    'cantidad' => $cantidad,
+                    'precio_unitario' => $this->formatMoney($precio),
                     'subtotal' => $this->formatMoney($subtotal),
                     'descuento' => $this->formatMoney($descuento),
                 ];
-
                 $detalleRows[] = $row;
-                $rows[] = [
-                    $row['cliente'],
-                    $row['habitacion'],
-                    $row['estadia'],
-                    $row['precio_real'],
-                    $row['precio_vendido'],
-                    $row['subtotal'],
-                    $row['descuento'],
-                ];
-
+                $rows[] = [$row['cliente'], $row['producto'], $row['cantidad'], $row['precio_unitario'], $row['subtotal'], $row['descuento']];
                 $totalSubtotal += $subtotal;
                 $totalDescuento += $descuento;
             }
@@ -2333,25 +2218,6 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
             })
             ->values();
 
-        $topHabitacionesDescuento = Movhabitacion::with('habitacion')
-            ->whereHas('habitacion', function ($q) use ($sucursal_id) {
-                $q->where('sucursal_id', $sucursal_id)
-                    ->whereNull('deleted_at');
-            })
-            ->where('descuento', '>', 0)
-            ->get()
-            ->groupBy('habitacion_id')
-            ->map(function ($items, $habitacion_id) {
-                $habitacion = $items->first()->habitacion;
-                return [
-                    'id' => $habitacion_id,
-                    'nombre' => $habitacion ? $habitacion->numero : 'Sin número',
-                    'descuento' => $items->sum('descuento')
-                ];
-            })
-            ->sortByDesc('descuento')
-            ->take(10)
-            ->values();
         $cortesiasPorUsuario = Movventum::with(['detMovventas', 'movimiento.usuario'])
             ->where('total', 0) // Solo ventas con total 0
             ->whereHas('movimiento', function ($q) use ($fechaInicio, $fechaFin, $sucursal_id) {
@@ -2427,45 +2293,12 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
             })
             ->values();
 
-        $topHabitacionesCortesia = Movhabitacion::with(['habitacion', 'movventas.detMovventas'])
-            ->whereHas('habitacion', function ($q) use ($sucursal_id) {
-                $q->where('sucursal_id', $sucursal_id)
-                    ->whereNull('deleted_at');
-            })
-            ->whereHas('movventas', function ($q) {
-                $q->where('total', 0); // Solo ventas con total 0 (cortesía)
-            })
-            ->get()
-            ->groupBy('habitacion_id')
-            ->map(function ($items, $habitacion_id) {
-                $habitacion = $items->first()->habitacion;
-
-                // Sumar monto_original de todos los detalles de movventas con total 0
-                $totalCortesia = $items->flatMap(function ($movhabitacion) {
-                    return $movhabitacion->movventas
-                        ->filter(fn($mv) => $mv->total == 0)
-                        ->flatMap(fn($mv) => $mv->detMovventas)
-                        ->pluck('monto_original');
-                })->sum();
-
-                return [
-                    'id' => $habitacion_id,
-                    'nombre' => $habitacion ? $habitacion->numero : 'Sin número',
-                    'cortesia' => round($totalCortesia, 2)
-                ];
-            })
-            ->sortByDesc('cortesia')
-            ->take(10)
-            ->values();
-        // dd($topHabitacionesCortesia);
         return view('report.dashboardventas', compact(
-            'topHabitacionesCortesia',
             'descuentosPorUsuario',
             'ventasPorTipoDocumento',
             'ventasAgrupadas',
             'evolucionVentas',
             'descuentosPorPersona',
-            'topHabitacionesDescuento',
             'cortesiasPorUsuario',
             'cortesiasPorPersona',
             'fechaInicio',
@@ -2601,320 +2434,4 @@ $pdf = Pdf::loadView('report.movventa_pdf', $data)
     }
 
 
-    public function dashmovhabitacion(Request $request)
-    {
-        $sucursal_id = Auth::user()->persona->sucursal_id;
-
-        // Si existen en request usar esas fechas, si no usar valores por defecto
-        $fechaInicio = $request->filled('fecha_inicio')
-            ? Carbon::parse($request->fecha_inicio)->startOfDay()
-            : Carbon::now()->startOfMonth()->startOfDay();
-
-
-        $fechaFin = $request->filled('fecha_fin')
-            ? Carbon::parse($request->fecha_fin)->endOfDay()
-            : Carbon::now()->endOfDay();
-
-        $topHabitacionesLimit = (int) $request->input('limit_top_habitaciones', $request->input('limit', 10));
-        if (!in_array($topHabitacionesLimit, [10, 25, 50], true)) {
-            $topHabitacionesLimit = 10;
-        }
-
-        $topHabitacionesOrden = strtolower((string) $request->input('orden_top_habitaciones', 'desc'));
-        $topHabitacionesOrden = $topHabitacionesOrden === 'asc' ? 'asc' : 'desc';
-
-        $categoriasHabitaciones = Tipohabitacion::where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre']);
-
-        $categoriasTopHabitacionesSeleccionadas = collect($request->input('categorias_top_habitaciones', []))
-            ->map(fn($id) => (int) $id)
-            ->filter()
-            ->values();
-
-        if ($categoriasTopHabitacionesSeleccionadas->isEmpty()) {
-            $categoriasTopHabitacionesSeleccionadas = $categoriasHabitaciones->pluck('id')
-                ->map(fn($id) => (int) $id)
-                ->values();
-        }
-
-        $topCategoriasLimit = (int) $request->input('limit_top_categorias', 10);
-        if (!in_array($topCategoriasLimit, [10, 25, 50], true)) {
-            $topCategoriasLimit = 10;
-        }
-
-        $topCategoriasOrden = strtolower((string) $request->input('orden_top_categorias', 'desc'));
-        $topCategoriasOrden = $topCategoriasOrden === 'asc' ? 'asc' : 'desc';
-
-        //  dd($fechaInicio, $fechaFin);
-        $evolucionAlojamientos = [];
-
-        $anulados = \App\Models\Movhabitacion::where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->whereHas('movimiento', function ($q) {
-                $q->where('situacion', 'D'); // Asegúrate de que el tipodocumento_id para anulados sea 8
-            })
-            ->whereBetween('fechaingreso', [$fechaInicio, $fechaFin])
-            ->selectRaw('DATE(fechaingreso) as fecha, COUNT(*) as cantidad')
-            ->groupBy('fecha')
-            ->orderBy('fecha')
-            ->get();
-
-        $finalizados = \App\Models\Movhabitacion::where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->where('situacion', 'C')
-            ->whereBetween('fechaingreso', [$fechaInicio, $fechaFin])
-            ->selectRaw('DATE(fechaingreso) as fecha, COUNT(*) as cantidad')
-            ->groupBy('fecha')
-            ->orderBy('fecha')
-            ->get();
-
-        $conProductos = \App\Models\Movhabitacion::where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->whereBetween('fechaingreso', [$fechaInicio, $fechaFin])
-            ->whereHas('detmovhabitacion')
-            ->selectRaw('DATE(fechaingreso) as fecha, COUNT(*) as cantidad')
-            ->groupBy('fecha')
-            ->orderBy('fecha')
-            ->get();
-
-        // Unificar fechas
-        $fechas = collect($anulados)->pluck('fecha')
-            ->merge(collect($finalizados)->pluck('fecha'))
-            ->merge(collect($conProductos)->pluck('fecha'))
-            ->unique()->sort()->values();
-
-        foreach ($fechas as $fecha) {
-            $evolucionAlojamientos[] = [
-                'fecha' => $fecha,
-                'anulados' => (int) ($anulados->firstWhere('fecha', $fecha)->cantidad ?? 0),
-                'finalizados' => (int) ($finalizados->firstWhere('fecha', $fecha)->cantidad ?? 0),
-                'con_productos' => (int) ($conProductos->firstWhere('fecha', $fecha)->cantidad ?? 0),
-            ];
-        }
-        // Fechas y sucursal
-        $hoy = Carbon::now()->format('Y-m-d');
-
-        // Habitaciones ocupadas actualmente
-        $ocupadas = Habitacion::where('sucursal_id', $sucursal_id)
-            ->where('situacion', 'Ocupada') // L = Limpieza (ajusta según codificación)
-            ->count();
-
-        // Reservas activas para hoy
-        $reservasHoy = MovreservaHabitacion::whereHas('movreserva', function ($q) use ($sucursal_id) {
-            $q->where('sucursal_id', $sucursal_id)->whereNull('deleted_at');
-        })
-            ->whereDate('fechacheckin', $hoy)
-            ->whereNull('deleted_at')
-            ->count();
-
-        // Habitaciones en limpieza
-        $enLimpieza = Habitacion::where('sucursal_id', $sucursal_id)
-            ->where('situacion', 'Limpieza') // L = Limpieza (ajusta según codificación)
-            ->count();
-
-        // Habitaciones en mantenimiento
-        $enMantenimiento = Habitacion::where('sucursal_id', $sucursal_id)
-            ->where('situacion', 'Mantenimiento') // M = Mantenimiento (ajusta según codificación)
-            ->count();
-        $topHabitaciones = MovhabitacionHabitacion::with(['habitacion', 'habitacion.tipohabitacion'])
-            ->whereHas('habitacion', function ($q) use ($sucursal_id, $categoriasTopHabitacionesSeleccionadas) {
-                $q->where('sucursal_id', $sucursal_id)
-                    ->whereNull('deleted_at');
-                if ($categoriasTopHabitacionesSeleccionadas->isNotEmpty()) {
-                    $q->whereIn('tipohabitacion_id', $categoriasTopHabitacionesSeleccionadas->all());
-                }
-            })
-            ->whereNull('deleted_at')
-            ->whereBetween('fechacheckin', [$fechaInicio, $fechaFin]) // 👈 filtro por rango de fechas
-            ->selectRaw('habitacion_id, COUNT(*) as total')
-            ->groupBy('habitacion_id')
-            ->orderBy('total', $topHabitacionesOrden)
-            ->take($topHabitacionesLimit)
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'id' => $item->habitacion->id,
-                    'name' => $item->habitacion->numero,
-                    'value' => $item->total,
-                    'pictureSettings' => [
-                        'src' => '/img/habitaciones/' . $item->habitacion->numero . '.svg'
-                    ],
-                    'columnFill' => '#4CAF50'
-                ];
-            });
-        $topCategorias = DB::table('movhabitacion_habitacion as mhh')
-            ->join('habitacion as h', 'h.id', '=', 'mhh.habitacion_id')
-            ->leftJoin('tipohabitacion as th', 'th.id', '=', 'h.tipohabitacion_id')
-            ->whereNull('mhh.deleted_at')
-            ->whereNull('h.deleted_at')
-            ->where('h.sucursal_id', $sucursal_id)
-            ->whereBetween('mhh.fechacheckin', [$fechaInicio, $fechaFin])
-            ->selectRaw("COALESCE(th.nombre, 'Sin categoria') as category, COUNT(*) as value")
-            ->groupByRaw("COALESCE(th.nombre, 'Sin categoria')")
-            ->orderBy('value', $topCategoriasOrden)
-            ->limit($topCategoriasLimit)
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'category' => $item->category,
-                    'value' => (int) $item->value
-                ];
-            })->values();
-        //    dd($topCategorias );
-        $alojamientosPorPiso = DB::table('movhabitacion_habitacion as mhh')
-            ->join('habitacion as h', 'h.id', '=', 'mhh.habitacion_id')
-            ->leftJoin('piso as p', 'p.id', '=', 'h.piso_id')
-            ->leftJoin('tipohabitacion as th', 'th.id', '=', 'h.tipohabitacion_id')
-            ->whereNull('mhh.deleted_at')
-            ->whereNull('h.deleted_at')
-            ->where('h.sucursal_id', $sucursal_id)
-            ->whereBetween('mhh.fechacheckin', [$fechaInicio, $fechaFin])
-            ->selectRaw("COALESCE(p.nombre, 'Sin piso') as piso_nombre, COALESCE(th.nombre, 'Sin tipo') as tipo_nombre, COUNT(*) as cantidad")
-            ->groupByRaw("COALESCE(p.nombre, 'Sin piso'), COALESCE(th.nombre, 'Sin tipo')")
-            ->orderBy('piso_nombre')
-            ->get()
-            ->groupBy('piso_nombre')
-            ->map(function ($items, $pisoNombre) {
-                $formatted = [];
-                $total = 0;
-                foreach ($items as $item) {
-                    $tipo = $item->tipo_nombre;
-                    $count = (int) $item->cantidad;
-                    $formatted[$tipo] = $count;
-                    $total += $count;
-                }
-
-                $formatted['quantity'] = $total;
-
-                return [
-                    'provider' => $pisoNombre,
-                    'data' => $formatted
-                ];
-            })->values();
-        // Alojamientos por responsable
-        $alojamientosPorResponsable = DB::table('movhabitacion as mh')
-            ->leftJoin('movimiento as m', 'm.id', '=', 'mh.movimiento_id')
-            ->leftJoin('persona as p', 'p.id', '=', 'm.responsable_id')
-            ->where('mh.sucursal_id', $sucursal_id)
-            ->whereNull('mh.deleted_at')
-            ->whereBetween('mh.fechaingreso', [$fechaInicio, $fechaFin])
-            ->selectRaw("COALESCE(p.nombres, 'Sin responsable') as responsable, COUNT(*) as cantidad")
-            ->groupByRaw("COALESCE(p.nombres, 'Sin responsable')")
-            ->orderByDesc('cantidad')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'responsable' => $item->responsable,
-                    'cantidad' => (int) $item->cantidad,
-                ];
-            })->values();
-
-        return view('report.dashboardalojamientos', compact(
-            'ocupadas',
-            'reservasHoy',
-            'enLimpieza',
-            'enMantenimiento',
-            'categoriasHabitaciones',
-            'categoriasTopHabitacionesSeleccionadas',
-            'topHabitaciones',
-            'topHabitacionesLimit',
-            'topHabitacionesOrden',
-            'topCategorias',
-            'topCategoriasLimit',
-            'topCategoriasOrden',
-            'alojamientosPorPiso',
-            'alojamientosPorResponsable',
-            'evolucionAlojamientos',
-            'fechaInicio',
-            'fechaFin'
-        ));
-    }
-
-    // DashboardController.php
-    public function evolucionHabitacion($id)
-    {
-        $datos = MovhabitacionHabitacion::where('habitacion_id', $id)
-            ->whereNull('deleted_at')
-            ->selectRaw('DATE(created_at) as fecha, COUNT(*) as total')
-            ->groupBy('fecha')
-            ->orderBy('fecha')
-            ->get();
-
-        $fechas = $datos->pluck('fecha');
-        $valores = $datos->pluck('total');
-
-        return response()->json([
-            'fechas' => $fechas,
-            'valores' => $valores
-        ]);
-    }
-
-    public function alojamientosHabitacion(Request $request, $id)
-    {
-        $sucursal_id = Auth::user()->persona->sucursal_id;
-
-        $fechaInicio = $request->filled('fecha_inicio')
-            ? Carbon::parse($request->fecha_inicio)->startOfDay()
-            : Carbon::now()->startOfMonth()->startOfDay();
-
-        $fechaFin = $request->filled('fecha_fin')
-            ? Carbon::parse($request->fecha_fin)->endOfDay()
-            : Carbon::now()->endOfDay();
-
-        $habitacion = Habitacion::where('sucursal_id', $sucursal_id)
-            ->whereNull('deleted_at')
-            ->findOrFail($id);
-
-        $movimientoHabitacion = Movhabitacion::with([
-            'habitacion',
-            'huespeds.persona.personamaestro',
-            'movhabitacion_habitacion' => function ($query) use ($habitacion) {
-                $query->where('habitacion_id', $habitacion->id)
-                    ->whereNull('deleted_at');
-            },
-        ])
-            ->where('sucursal_id', $sucursal_id)
-            ->whereBetween('fechaingreso', [$fechaInicio, $fechaFin])
-            ->whereHas('movhabitacion_habitacion', function ($query) use ($habitacion) {
-                $query->where('habitacion_id', $habitacion->id)
-                    ->whereNull('deleted_at');
-            })
-            ->orderBy('fechaingreso', 'desc')
-            ->get()
-            ->map(function ($movimiento) use ($habitacion) {
-                $detalleHabitacion = $movimiento->movhabitacion_habitacion->first();
-
-                if ($detalleHabitacion) {
-                    $movimiento->preciohabitacion = $detalleHabitacion->tarifa ?? $movimiento->preciohabitacion;
-                    $movimiento->early_checkin = $detalleHabitacion->early_checkin ?? $movimiento->early_checkin;
-                    $movimiento->late_checkout = $detalleHabitacion->late_checkout ?? $movimiento->late_checkout;
-                    $movimiento->total = $detalleHabitacion->total ?? $movimiento->total;
-                    $movimiento->horas = $detalleHabitacion->horas ?? $movimiento->horas;
-                    $movimiento->dias = $detalleHabitacion->dias ?? $movimiento->dias;
-                    $movimiento->situacion = $detalleHabitacion->situacion ?? $movimiento->situacion;
-                    $movimiento->fechasalida = $detalleHabitacion->fechacheckout ?? $movimiento->fechasalida;
-                }
-
-                $movimiento->setRelation('habitacion', $habitacion);
-
-                return $movimiento;
-            });
-
-        $tituloHistorial = 'Historial de Alojamientos - Habitacion ' . $habitacion->numero;
-        $subtituloHistorial = 'Rango: ' . $fechaInicio->format('Y-m-d') . ' al ' . $fechaFin->format('Y-m-d');
-
-        return view('huesped.historial-alojamientos', compact(
-            'movimientoHabitacion',
-            'tituloHistorial',
-            'subtituloHistorial'
-        ));
-    }
 }
-
-
-
-
-
-

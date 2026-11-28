@@ -356,7 +356,7 @@
                         <td>
                             <p>{{ $numero_a_texto }}</p>
                             <p class="x-small">Representación impresa del comprobante electrónico, consulte en
-                                https://www.hotelhub.com.pe</p>
+                                https://www.pulsoplus.net</p>
                         </td>
                     </tr>
                 </table>
@@ -373,7 +373,7 @@
             @endif
             <br/>
             
-       <img src="{{ public_path(path: 'img/Logo_HotelHub_tr.png') }}" alt="Logo" height="80">
+       <img src="{{ public_path(path: 'img/pulso-logo.jpg') }}" alt="Logo" height="80">
         </main>
     </body>
 

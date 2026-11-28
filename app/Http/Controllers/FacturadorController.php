@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Facturador;
 use App\Http\Requests\FacturadorRequest;
 use App\Models\Igv;
-use App\Models\Movhabitacion;
 use App\Models\Operacione;
 use App\Models\Persona;
 use App\Models\Producto;

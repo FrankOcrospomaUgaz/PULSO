@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Encuestum;
 use App\Http\Requests\EncuestumRequest;
 use App\Models\DetEncuestum;
-use App\Models\Movhabitacion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -109,33 +108,13 @@ class EncuestumController extends Controller
             ->where('estado', true)
             ->get();
 
-        // 📊 Respuestas por responsable
-        $sucursal_id = auth()->user()->Persona->sucursal_id; // ajusta según corresponda
-        $respuestasPorResponsable = Movhabitacion::where('sucursal_id', $sucursal_id)
+        $respuestasPorResponsable = Respuestum::where('encuesta_id', $id)
+            ->where('sucursal_id', auth()->user()->persona->sucursal_id)
             ->whereNull('deleted_at')
-            ->with(['movimiento.Responsable']) // cargamos responsable
-            ->get()
-            ->groupBy(function ($item) {
-                return $item->movimiento->Responsable->nombres ?? 'Sin responsable';
-            })
-            ->map(function ($items, $responsable) use ($sucursal_id) {
-                // IDs de movimientos de este responsable
-                $movimientoIds = $items->pluck('movimiento_id')->unique();
-
-                // Contar respuestas asociadas a esos movimientos
-                $respuestasCount = Respuestum::whereIn('movimiento_id', $movimientoIds)
-                    ->where('sucursal_id', $sucursal_id)
-                    ->whereNull('deleted_at')
-                    ->count();
-             
-                return [
-                    'responsable'   => $responsable,
-                    'respuestas'    => $respuestasCount,
-                    'alojamientos'  => $items->count(),
-                ];
-            })
-            ->values();
-      //  dd($respuestasPorResponsable);
+            ->selectRaw('persona, COUNT(*) as respuestas')
+            ->groupBy('persona')
+            ->orderByDesc('respuestas')
+            ->get();
         return view('encuestum.estadisticas', compact(
             'detEncuestas',
             'situaciones',

@@ -7,7 +7,6 @@ use App\Models\Solicitud;
 use App\Http\Requests\SolicitudRequest;
 use App\Models\DetMovcaja;
 use App\Models\Caja;
-use App\Models\Movhabitacion;
 use App\Models\Movventum;
 use App\Models\Operacione;
 use App\Models\Persona;
@@ -27,7 +26,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\SolicitudExport;
-use App\Models\MovhabitacionHabitacion;
 use App\Services\CorrelativoService;
 use Illuminate\Support\Facades\Config;
 use App\Services\UuidService;
@@ -1009,7 +1007,7 @@ class SolicitudController extends Controller
         $numero = $comprobante->tipo_documento . $comprobante->serie . '-' . str_pad($comprobante->correlativo, 8, '0', STR_PAD_LEFT);
         $archivo = $comprobante->nombre;
         $nombrecomercial = $sucursal->nombrecomercial;
-        $firma = 'HotelHUB';
+        $firma = 'PULSO+';
         $downloadBillUrl = $comprobante->public_name . '/xml';
 
         // ✅ Generar el PDF como binario (sin codificar)
@@ -1063,7 +1061,7 @@ class SolicitudController extends Controller
                 'to' => $telefono,
                 'type' => 'template',
                 'template' => [
-                    'name' => 'hotelhub_pdf_invoice',
+                    'name' => 'pulso_pdf_invoice',
                     'language' => ['code' => 'es'],
                     'components' => [
                         ['type' => 'header', 'parameters' => [
@@ -1458,14 +1456,6 @@ class SolicitudController extends Controller
                 $persona = Persona::find($movventa->movimiento->persona_id);
                 $movcaja = Movcaja::find($movventa->movcaja->id);
                 $detallesMovCaja = DetMovcaja::where('movcaja_id', $movcaja->id)->get();
-                $movhabitacionhabitacion = null;
-                if ($movventa->movimiento->movhabitacion) {
-                    $movhabitacion_id = $movventa->movimiento->movhabitacion->id;
-                    $movhabitacion = Movhabitacion::where('id', $movhabitacion_id)->first();
-
-                    $movhabitacionhabitacion = MovhabitacionHabitacion::where('movhabitacion_id', $movhabitacion_id)->first();
-                }
-
                 // **Enviar la solicitud al facturador**
                 $respuesta = $facturadorController->enviarFacturacionElectronica(
                     $movventa,

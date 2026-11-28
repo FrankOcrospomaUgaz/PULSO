@@ -176,13 +176,10 @@ Pasaporte
 
         <input type="hidden" name="accion" id="accion" value="{{ $accion }}">
         @if ($accion == 'CHECKIN')
-            <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
         @endif
         @if ($accion == 'EDITCHECKIN')
-            <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
         @endif
         @if ($accion == 'CHECKOUT')
-            <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
         @endif
 
         <!-- Departamento -->
@@ -247,7 +244,7 @@ Pasaporte
     </div>
     {{-- BLOQUE DE ROLES Y PERSONA NO GRATA DEBAJO --}}
     @isset($roles)
-        @if ($accion === 'CHECKIN' || $accion === 'CRUD')
+        @if ($accion === 'CHECKIN' || $accion === 'CRUD' || $accion === 'CLINICA')
             @php
                 $selectedRoles = old('rol_id');
 
@@ -298,6 +295,36 @@ Pasaporte
                         </p>
                     </div>
     @endisset
+
+    @if (!empty($registroClinico))
+        <input type="hidden" name="acepta_notificaciones" value="0">
+        <div class="divider" style="margin: 12px 0 18px"></div>
+        <div class="col s12"><span class="card-title">Datos clínicos del paciente</span></div>
+        <div class="input-field col s12 m6">
+            <input type="text" name="tutor_nombres" id="tutor_nombres" value="{{ old('tutor_nombres', $row?->tutor_nombres) }}" maxlength="180">
+            <label for="tutor_nombres">Padre, madre o tutor</label>
+            {!! $errors->first('tutor_nombres', '<span class="helper-text red-text" role="alert"><strong>:message</strong></span>') !!}
+        </div>
+        <div class="input-field col s12 m6">
+            <input type="text" name="tutor_documento" id="tutor_documento" value="{{ old('tutor_documento', $row?->tutor_documento) }}" maxlength="30">
+            <label for="tutor_documento">Documento del tutor</label>
+        </div>
+        <div class="input-field col s12 m6">
+            <input type="text" name="tutor_telefono" id="tutor_telefono" value="{{ old('tutor_telefono', $row?->tutor_telefono) }}" maxlength="40">
+            <label for="tutor_telefono">Teléfono del tutor</label>
+        </div>
+        <div class="input-field col s12 m6">
+            <input type="email" name="tutor_email" id="tutor_email" value="{{ old('tutor_email', $row?->tutor_email) }}" maxlength="150">
+            <label for="tutor_email">Correo del tutor</label>
+        </div>
+        <div class="col s12" style="padding: 8px 0 14px">
+            <label><input type="checkbox" name="acepta_notificaciones" value="1" {{ old('acepta_notificaciones', $row?->acepta_notificaciones) ? 'checked' : '' }}><span>Autoriza recordatorios de citas y saludos de cumple-mes</span></label>
+        </div>
+        <div class="input-field col s12">
+            <textarea name="observaciones" id="observaciones" class="materialize-textarea">{{ old('observaciones', $row?->observaciones) }}</textarea>
+            <label for="observaciones">Observaciones clínicas</label>
+        </div>
+    @endif
 
 
 <div class="row without-bottom"  id="divUsuario" style="display:none;">

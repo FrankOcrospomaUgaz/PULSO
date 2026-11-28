@@ -45,7 +45,6 @@
                 <th>Medio de pago</th>
                 <th>Tipo de pago</th>
                 <th style="width: 15%;">Detalles</th>
-                <th>Habitaciones</th>
             </tr>
         </thead>
         <tbody>
@@ -118,24 +117,7 @@
                         @endforeach
                     </td>
                     
-          <td>
-    @php
-        $movhab = $movventa->movhabitacion;
-    @endphp
 
-    @if ($movhab && $movhab->habitaciones->count() > 0)
-        @foreach ($movhab->habitaciones as $hab)
-            <div style="margin-bottom: 4px;">
-               {{ $hab->tipohabitacion->nombre ?? '' }}
-                 <strong>{{ $hab->numero }}</strong><br>
-            </div>
-
-            
-        @endforeach
-    @else
-        —
-    @endif
-</td>
 
                     
                 </tr>

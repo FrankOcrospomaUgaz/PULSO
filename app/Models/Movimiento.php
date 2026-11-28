@@ -106,14 +106,6 @@ class Movimiento extends Model
         return $this->hasOne(\App\Models\Movcompra::class, 'movimiento_id', 'id');
     }
 
-    public function movhabitacion()
-    {
-        return $this->hasOne(\App\Models\Movhabitacion::class, 'movimiento_id', 'id');
-    }
-        public function movreserva()
-    {
-        return $this->hasOne(\App\Models\Movreserva::class, 'movimiento_id', 'id');
-    }
     public function movcaja()
     {
         return $this->hasOne(\App\Models\Movcaja::class, 'movimiento_id', 'id');

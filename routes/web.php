@@ -6,15 +6,8 @@ use App\Http\Controllers\TablaOperacioneController;
 use App\Http\Controllers\AutocompleteController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\HousekeepingLoginController;
-use App\Http\Controllers\HousekeepingController;
 use App\Http\Controllers\SalonPackageController;
 use App\Http\Controllers\SalonServiceController;
-use App\Events\CheckoutReminder;
-use App\Models\MovhabitacionHabitacion;
-use App\Models\Conceptopago;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,11 +19,6 @@ use Illuminate\Support\Facades\Cache;
 | be assigned to the "web" middleware group. Make something great!
 |
 */
-
-Route::get('/housekeeping/login/{ruc}', [HousekeepingLoginController::class, 'showLoginForm'])->name('housekeeping.login.form');
-Route::post('/housekeeping/login', [HousekeepingLoginController::class, 'login'])->name('housekeeping.login');
-Route::post('/housekeeping/logout/{ruc}', [HousekeepingLoginController::class, 'logout'])->name('housekeeping.logout');
-
 
 Route::get('/welcome', function () {
     return view('welcome');
@@ -45,63 +33,9 @@ Route::get('/', function () {
 })->middleware(['auth', 'verified', 'sucursal.active'])->name('dashboard');
 
 Route::middleware(['auth', 'sucursal.active'])->group(function () {
-    if (app()->environment('local')) {
-        Route::get('/dev/checkout-reminder-test', function () {
-            $user = Auth::user();
-            $persona = $user ? $user->persona : null;
-            $sucursalId = $persona ? $persona->sucursal_id : null;
-            $detalle = MovhabitacionHabitacion::with(['habitacion', 'movhabitacion'])
-                ->when($sucursalId, function ($query) use ($sucursalId) {
-                    $query->where(function ($inner) use ($sucursalId) {
-                        $inner->whereHas('movhabitacion', function ($movhabitacionQuery) use ($sucursalId) {
-                            $movhabitacionQuery->where('sucursal_id', $sucursalId);
-                        })->orWhereHas('habitacion', function ($habitacionQuery) use ($sucursalId) {
-                            $habitacionQuery->where('sucursal_id', $sucursalId);
-                        });
-                    });
-                })
-                ->latest('fechacheckout')
-                ->first();
-
-            if (!$detalle) {
-                return response()->json([
-                    'ok' => false,
-                    'message' => 'No hay habitaciones registradas para probar.',
-                ], 404);
-            }
-
-            event(new CheckoutReminder($detalle));
-
-            $habitacion = $detalle->habitacion;
-
-            return response()->json([
-                'ok' => true,
-                'habitacion' => $habitacion ? ($habitacion->numero ?? $detalle->habitacion_id) : $detalle->habitacion_id,
-            ]);
-        })->name('dev.checkout.reminder.test');
-    }
-
-    Route::post('/checkout-reminder/ping', function () {
-        $lock = Cache::lock('checkout-reminder-ping', 55);
-        if (!$lock->get()) {
-            return response()->json(['ok' => true, 'locked' => true]);
-        }
-
-        try {
-            Artisan::call('habitaciones:checkout-reminder');
-        } finally {
-            optional($lock)->release();
-        }
-
-        return response()->json(['ok' => true]);
-    })->name('checkout.reminder.ping');
-
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-    Route::get('/housekeeping/jornada', [HousekeepingLoginController::class, 'index'])->name('housekeeping.dashboard');
-    Route::get('/housekeeping/start/{id}', [HousekeepingLoginController::class, 'startCleaning'])->name('housekeeping.start');
-    Route::post('/housekeeping/finish/{id}', [HousekeepingLoginController::class, 'finishCleaning'])->name('housekeeping.finish');
     Route::middleware(['auth', 'check.permission:15'])->group(function () {
         Route::resource('tablas', App\Http\Controllers\TablaController::class);
         Route::resource('campos', App\Http\Controllers\CampoController::class);
@@ -134,14 +68,8 @@ Route::middleware(['auth', 'sucursal.active'])->group(function () {
         Route::resource('empresas', App\Http\Controllers\EmpresaController::class);
 
     });
-    Route::resource('motivoreserva', App\Http\Controllers\MotivoreservaController::class);
     Route::resource('sucursal', App\Http\Controllers\SucursalController::class);
     Route::resource('plantilla_contrato', App\Http\Controllers\PlantillaContratoController::class);
-    Route::resource('huesped', App\Http\Controllers\HuespedController::class);
-    Route::resource('pisos', App\Http\Controllers\PisoController::class);
-    Route::resource('tipohabitacion', App\Http\Controllers\TipohabitacionController::class);
-    Route::resource('habitacion', App\Http\Controllers\HabitacionController::class);
-    Route::post('habitacion/destroy-many', [App\Http\Controllers\HabitacionController::class, 'destroyMany'])->name('habitacion.destroyMany');
     Route::resource('producto', App\Http\Controllers\ProductoController::class);
     Route::resource('marca', App\Http\Controllers\MarcaController::class);
     Route::resource('categoria', App\Http\Controllers\CategoriumController::class);
@@ -151,7 +79,6 @@ Route::middleware(['auth', 'sucursal.active'])->group(function () {
     Route::resource('movcaja', App\Http\Controllers\MovcajaController::class);
     Route::resource('movventa', App\Http\Controllers\MovventumController::class);
     Route::resource('movcompra', App\Http\Controllers\MovcompraController::class);
-    Route::resource('movhabitacion', App\Http\Controllers\MovhabitacionController::class);
     Route::resource('salon', App\Http\Controllers\SalonController::class);
     Route::resource('ambiente', App\Http\Controllers\AmbienteController::class);
     Route::resource('edificio', App\Http\Controllers\EdificioController::class);
@@ -169,46 +96,23 @@ Route::resource('tipoambiente', App\Http\Controllers\TipoambienteController::cla
     Route::resource('pregunta', App\Http\Controllers\DetEncuestumController::class);
     Route::resource('respuesta', App\Http\Controllers\RespuestumController::class);
     Route::resource('categoriapregunta', App\Http\Controllers\CategoriapreguntumController::class);
-    Route::resource('housekeeping', App\Http\Controllers\HousekeepingController::class);
-    Route::get('tipohabitacion/{id}/imagenes', [App\Http\Controllers\TipohabitacionController::class, 'imagenes'])->name('tipohabitacion.imagenes');
-    Route::post('tipohabitacion/{id}/imagenes', [App\Http\Controllers\ImagenesTipohabitacionController::class, 'actualizarImagenes'])->name('imagenes.actualizar');
-
-    Route::get('huesped/{id}/alojamientos', [App\Http\Controllers\HuespedController::class, 'alojamientos'])->name('huesped.alojamientos');
-
-    Route::get('/housekeeping/progreso/{id}', [HousekeepingController::class, 'progreso'])->name('housekeeping.progreso');
-    Route::get('housekeeping/asignar/{id}', [App\Http\Controllers\HousekeepingController::class, 'asignar'])->name('housekeeping.asignar');
-    Route::post('housekeeping/atenderstore', [App\Http\Controllers\HousekeepingController::class, 'asignarStore'])->name('housekeeping.asignar.store');
     Route::get('/my_workshift', [App\Http\Controllers\MenuopcioneController::class, 'my_workshift'])->name('my_workshift');
 
-    Route::get('movreserva/create', [App\Http\Controllers\MovreservaController::class, 'create'])->name('movreserva.create');
-    Route::resource('movreserva', App\Http\Controllers\MovreservaController::class);
-    Route::resource('movreserva_paquete', App\Http\Controllers\MovreservaPaqueteController::class);
-    Route::get('movreserva_paquete/create', [App\Http\Controllers\MovreservaPaqueteController::class, 'create'])->name('movreserva_paquete.create');
     Route::get('salon/{id}/servicios', [App\Http\Controllers\SalonController::class, 'servicios'])->name('salon.servicios');
     Route::get('salon/{id}/paquetes', [App\Http\Controllers\SalonController::class, 'paquetes'])->name('salon.paquetes');
     Route::resource('salon.servicios', SalonServiceController::class);
     Route::resource('salon.paquetes', SalonPackageController::class);
-    Route::resource('origenreserva', App\Http\Controllers\OrigenreservaController::class);
     Route::resource('situacion', App\Http\Controllers\SituacionController::class);
     Route::resource('contrato.compromiso_pago', App\Http\Controllers\CompromisoPagoController::class);
     Route::get('contratos/{id}/compromiso_pago/pagar', [App\Http\Controllers\CompromisoPagoController::class, 'pagar'])->name('contrato.comprimiso_pago.pagar');
     Route::post('contratos/compromiso_pago/pagostore', [App\Http\Controllers\CompromisoPagoController::class, 'pagostore'])->name('contrato.compromiso_pago.pagostore');
 
-    Route::delete('movreserva/{id}/anular', [App\Http\Controllers\MovreservaController::class, 'anular'])->name('movreserva.anular');
-    Route::get('movreserva/{id}/detalles', [App\Http\Controllers\MovreservaController::class, 'verDetalles'])->name('movreserva.detalles');
-    Route::get('movreserva/{id}/atender', [App\Http\Controllers\MovreservaController::class, 'atender'])->name('movreserva.atender');
-    Route::post('movreserva/atenderstore', [App\Http\Controllers\MovreservaController::class, 'atenderstore'])->name('movreserva.atenderstore');
-    Route::get('movreservagenerarpdf/{id}', [App\Http\Controllers\MovreservaController::class, 'generarPDF'])->name('movreserva.generarPDF');
-    Route::get('movreserva/reporte/pdf', [App\Http\Controllers\MovreservaController::class, 'generarPDFReporte'])->name('movreserva.reporte.pdf');
-    Route::get('movreserva/reporte/excel', [App\Http\Controllers\MovreservaController::class, 'exportarExcelReporte'])->name('movreserva.reporte.excel');
-    Route::get('/reservas/habitaciones-disponibles', [App\Http\Controllers\MovreservaController::class, 'habitacionesDisponibles']);
     Route::get('/contratos/ambientes-por-edificio/{edificio}', [App\Http\Controllers\ContratoController::class, 'ambientesPorEdificio']);
     Route::get('/ambientes/{id}/datos', [App\Http\Controllers\AmbienteController::class, 'obtenerDatos']);
     Route::get('contratos/{id}/renovar', [App\Http\Controllers\ContratoController::class, 'renovar'])->name('contrato.renovar');
     Route::get('contratos/{id}/pagos', [App\Http\Controllers\CompromisoPagoController::class, 'index'])->name('contrato.pagos');
     Route::delete('contratos/{id}/anular', [App\Http\Controllers\ContratoController::class, 'anular'])->name('contrato.anular');
     Route::delete('contratos/{id}/finalizar', [App\Http\Controllers\ContratoController::class, 'finalizar'])->name('contrato.finalizar');
-    Route::get('movreservareport/', [App\Http\Controllers\MovreservaController::class, 'report'])->name('movreserva.reporte.index');
     Route::get('parcialesalquiler/{id}', [App\Http\Controllers\CompromisoPagoController::class, 'historial'])->name('contrato.compromiso_pago.parciales');
 
 Route::post('/plantilla-contrato/vista-previa', [App\Http\Controllers\ContratoController::class, 'generarVistaPrevia'])->name('contrato.generarVistaPrevia');
@@ -229,7 +133,6 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('movventacreate/{personaCreadaId?}', [App\Http\Controllers\MovventumController::class, 'create'])->name('movventa.create.index');
     Route::get('movventagenerarpdf/{id}', [App\Http\Controllers\MovventumController::class, 'generarPDF'])->name('movventa.generarPDF');
     Route::get('movventa/{id}/detalles', [App\Http\Controllers\MovventumController::class, 'verDetalles'])->name('movventa.verDetalles');
-    Route::get('movventa/{id}/alojamiento', [App\Http\Controllers\MovventumController::class, 'verAlojamiento'])->name('movventa.alojamiento');
 
     Route::get('movventa/{id}/convertirAComprobante/{personaCreadaId?}', [App\Http\Controllers\MovventumController::class, 'convertirAComprobante'])->name('movventa.convertirAComprobante');
     Route::post('movventa/{id}/convertirstore', [App\Http\Controllers\MovventumController::class, 'convertirstore'])->name('movventa.convertirstore');
@@ -244,8 +147,6 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     )
         ->name('ventas.generarExcelReporte');
     Route::post('/generate-approval-code', [App\Http\Controllers\MovventumController::class, 'generarCodigoAprobacion']);
-    Route::post('/movhabitacion/generate-approval-code', [App\Http\Controllers\MovhabitacionController::class, 'generarCodigoAprobacionAnulacion'])
-        ->name('movhabitacion.generate-approval-code');
 
     Route::get('solicitudcancell_boletas', [App\Http\Controllers\SolicitudController::class, 'modalcancell_boletas'])->name('comprobante.cancell_boletas');
     Route::post('solicitud/cancellboletas', [App\Http\Controllers\SolicitudController::class, 'cancell_boletas'])->name('cancell_boletas.store');
@@ -277,47 +178,8 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
 
     Route::get('solicitud/generarPDFreporte/{tipo?}/{situacion?}/{fecha_inicio}/{fecha_fin}', [App\Http\Controllers\SolicitudController::class, 'generarPDF'])->name('comprobante.generarPDFreporte');
     Route::get('solicitud/generarExcelReporte/{tipo?}/{situacion?}/{fecha_inicio}/{fecha_fin}', [App\Http\Controllers\SolicitudController::class, 'generarExcel'])->name('comprobante.generarExcelReporte');
-    Route::get('movhabitacion/exportarExcel/{habitacion}/{cliente}/{estado}/{fecha_inicio}/{fecha_fin}', [App\Http\Controllers\MovhabitacionController::class, 'exportarExcel'])->name('movhabitacion.exportarExcel');
-
-
-    Route::get('movhabitacion/checkin/{id}/{personaCreadaId?}', [App\Http\Controllers\MovhabitacionController::class, 'checkin'])->name('movhabitacion.checkin');
-    Route::get('movhabitacion/checkinedit/{habitacion_id}/{personaCreadaId?}', [App\Http\Controllers\MovhabitacionController::class, 'editCheckin'])->name('movhabitacion.editCheckin');
-    Route::put('movhabitacion/updatecheckin/{id}', [App\Http\Controllers\MovhabitacionController::class, 'updatecheckin'])->name('movhabitacion.updatecheckin');
-
-    Route::get('movhabitacion/checkout/{id}/{personaCreadaId?}', [App\Http\Controllers\MovhabitacionController::class, 'checkout'])->name('movhabitacion.checkout');
-    Route::get('movhabitacion/ver/{id}/', [App\Http\Controllers\MovhabitacionController::class, 'ver'])->name('movhabitacion.ver');
-
-    Route::get('movhabitacion/productos/{id}', [App\Http\Controllers\MovhabitacionController::class, 'productos'])->name('movhabitacion.productos');
-    Route::get('movhabitacion/servicios/{id}', [App\Http\Controllers\MovhabitacionController::class, 'servicios'])->name('movhabitacion.servicios');
-    Route::get('/movhabitacionvista-general', [App\Http\Controllers\MovhabitacionController::class, 'vistaGeneral'])->name('movhabitacion.vistaGeneral');
-    Route::get('/movhabitacion/filtrar/{categoriaId}', [App\Http\Controllers\MovhabitacionController::class, 'filtrarPorCategoria'])->name('movhabitacion.filtrar');
-    Route::get('/movhabitacion/filtrar-piso/{pisoId?}', [App\Http\Controllers\MovhabitacionController::class, 'filtrarPorPiso'])->name('movhabitacion.filtrarPiso');
-    Route::get('/movhabitacion/filtrarEstado/{estado}', [App\Http\Controllers\MovhabitacionController::class, 'filtrarPorEstado'])->name('movhabitacion.filtrarEstado');
-    Route::match(['get', 'delete'], 'movhabitacion/anular/{id}', [App\Http\Controllers\MovhabitacionController::class, 'anular'])->name('movhabitacion.anular');
-    Route::get('movhabitacion/historial-ventas/{id}', [App\Http\Controllers\MovhabitacionController::class, 'historial'])->name('movhabitacion.historial-ventas');
-
-    Route::get('checkouts/', [App\Http\Controllers\MovhabitacionController::class, 'checkouts'])->name('checkouts.index');
-    Route::get('checkouts/productos/{movid}', [App\Http\Controllers\MovhabitacionController::class, 'checkoutsproductos'])->name('checkouts.productos');
-    Route::get('checkouts/{id}/detalle-consumo-pdf', [App\Http\Controllers\MovhabitacionController::class, 'detalleConsumoPdf'])->name('checkouts.detalleConsumoPdf');
-    Route::get('/checkouts/exportar-pdf/{habitacion}/{cliente}/{estado}/{fecha_inicio}/{fecha_fin}', [App\Http\Controllers\MovhabitacionController::class, 'exportarPDF'])->name('checkouts.exportarPDF');
-    Route::get('/filter-checkouts', [App\Http\Controllers\MovhabitacionController::class, 'filter']);
-    Route::get('/resumen-alojamientos/pdf', [App\Http\Controllers\MovhabitacionController::class, 'generarResumenPDF'])->name('mohabitacion.resumen_pdf');
-    Route::get('/filter-huesped', [App\Http\Controllers\HuespedController::class, 'filter'])->name('huesped.filter');
-    Route::get('alojamientos', [App\Http\Controllers\MovhabitacionController::class, 'alojamientos'])->name('movhabitacion.alojamientos.index');
-    Route::get('/filter-by-situacion/{situacion}', [App\Http\Controllers\MovhabitacionController::class, 'filterBySituacion']);
-    Route::get('/filter-habitaciones', [App\Http\Controllers\HabitacionController::class, 'filter']);
     Route::get('/filter-stockproductos', [App\Http\Controllers\StockproductoController::class, 'filter']);
     Route::get('/filter-ventas', [App\Http\Controllers\MovventumController::class, 'filter']);
-    Route::get('/filter-reservas', [App\Http\Controllers\MovreservaController::class, 'filter']);
-    Route::get('generarPDF/huesped', [App\Http\Controllers\HuespedController::class, 'generarPDFHuesped'])->name('huesped.generarPDF');
-    Route::post('movhabitacion/{id}/process-checkout/{accion}', [App\Http\Controllers\MovhabitacionController::class, 'checkoutstore'])->name('movhabitacion.checkoutstore');
-    Route::post('movhabitacion/storeProductos', [App\Http\Controllers\MovhabitacionController::class, 'storeProductos'])->name('movhabitacion.storeProductos');
-    Route::get('/api/actualizar-comprobante/{tipoDocumentoId}', [App\Http\Controllers\MovhabitacionController::class, 'actualizarComprobante']);
-    Route::get('/habitacion/dejar-limpiar/{id}/{opcion?}', [App\Http\Controllers\MovhabitacionController::class, 'dejarLimpiar'])->name('habitacion.dejarlimpiar');
-    Route::get('/habitacion/limpiar/{id}/{opcion?}', [App\Http\Controllers\MovhabitacionController::class, 'Limpiar'])->name('habitacion.limpiar');
-    Route::get('/habitacion/reservar/{id}', [App\Http\Controllers\MovhabitacionController::class, 'reservar'])->name('habitacion.reservar');
-    Route::get('/habitacion/mantenimiento/{id}/{opcion?}', [App\Http\Controllers\MovhabitacionController::class, 'mantenimiento'])->name('habitacion.mantenimiento');
-    Route::get('/calendario/reservas/', [App\Http\Controllers\MovhabitacionController::class, 'calendario'])->name('calendarioreservas.index');
     // Clinical ERP workflows backed by the existing paciente/profesional/servicio/cita tables.
     foreach (['pacientes' => 'pacientes', 'profesionales' => 'profesionales', 'servicios-clinicos' => 'servicios-clinicos'] as $path => $type) {
         $controller = App\Http\Controllers\ClinicaController::class;
@@ -343,7 +205,6 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('/calendario/citas', [App\Http\Controllers\ClinicaController::class, 'calendario'])->name('calendario-citas.index');
     Route::get('/calendario/citas/eventos', [App\Http\Controllers\ClinicaController::class, 'eventosCalendario'])->name('calendario-citas.eventos');
     Route::get('/report/citas', [App\Http\Controllers\ClinicaController::class, 'reporte'])->name('report.citas.index');
-    Route::get('/verificar-estado-habitacion/{habitacionId}', [App\Http\Controllers\HabitacionController::class, 'verificarEstadoHabitacion']);
 
 
     Route::get('movcajaentrada/{cajaId}/{operacion}', [App\Http\Controllers\MovcajaController::class, 'create'])->name('movcaja.ingreso');
@@ -395,12 +256,7 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('verSeccionesSucursalPerfil/{id}', [App\Http\Controllers\PerfilsucursalController::class, 'verSeccionesSucursalPerfil'])->name('perfilsucursal.verSecciones');
     Route::get('/seccionessucursalperfil/edit/{id}', [App\Http\Controllers\PerfilsucursalController::class, 'seccionsucursalperfiledit'])->name('rel_seccionsucursalperfil.edit');
     Route::put('/seccionessucursalperfil/update/{id}', [App\Http\Controllers\PerfilsucursalController::class, 'seccionsucursalperfilupdate'])->name('rel_seccionsucursalperfil.update');
-    Route::get('finalizarmovhabitacion/{id}/activar', [App\Http\Controllers\MovhabitacionController::class, 'finalizarmovhabitacion'])->name('finalizarmovhabitacion');
-    Route::get('reactivarmovhabitacion/{id}/activar', [App\Http\Controllers\MovhabitacionController::class, 'reactivarmovhabitacion'])->name('reactivarmovhabitacion');
 
-    Route::get('finalizarmovreserva/{id}/activar', [App\Http\Controllers\MovhabitacionController::class, 'finalizarmovreserva'])->name('finalizarmovreserva');
-    Route::get('cambiaraocupada/{id}', [App\Http\Controllers\HabitacionController::class, 'cambiaraocupada'])->name('cambiaraocupada');
-    Route::get('cambiaradisponible/{id}', [App\Http\Controllers\HabitacionController::class, 'cambiaradisponible'])->name('cambiaradisponible');
 
     Route::get('permisousuario/{id}/activar', [App\Http\Controllers\PerfilsucursalController::class, 'activarPermiso'])->name('permisousuario.activar');
     Route::get('permisousuario/{id}/desactivar', [App\Http\Controllers\PerfilsucursalController::class, 'desactivarPermiso'])->name('permisousuario.desactivar');
@@ -489,8 +345,8 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('sucursal/create/{empresa_id}', [App\Http\Controllers\SucursalController::class, 'create'])->name('sucursal.create');
 
     // Route::get('persona/index/{sucursal_id}', [App\Http\Controllers\PersonaController::class, 'index'])->name('persona.index');
-    Route::get('persona/create/{sucursal_id}/{accion}/{habitacion_id?}', [App\Http\Controllers\PersonaController::class, 'create'])->name('persona.create');
-    Route::get('cliente/create/{sucursal_id}/{accion}/{habitacion_id?}', [App\Http\Controllers\PersonaController::class, 'clientecreate'])->name('cliente.create');
+    Route::get('persona/create/{sucursal_id}/{accion}', [App\Http\Controllers\PersonaController::class, 'create'])->name('persona.create');
+    Route::get('cliente/create/{sucursal_id}/{accion}', [App\Http\Controllers\PersonaController::class, 'clientecreate'])->name('cliente.create');
 
     Route::get('personaedit/{id}/{accion}', [App\Http\Controllers\PersonaController::class, 'edit'])->name('persona.edit');
 
@@ -505,7 +361,6 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     Route::get('/autocomplete/productos', [AutocompleteController::class, 'productos'])->name('autocomplete.productos');
     Route::get('/autocomplete/menuopciones', [AutocompleteController::class, 'menuopciones'])->name('autocomplete.menuopciones');
     Route::get('/autocomplete/solicitudes', [AutocompleteController::class, 'solicitudes'])->name('autocomplete.solicitudes');
-    Route::get('/autocomplete/habitaciones', [AutocompleteController::class, 'habitaciones'])->name('autocomplete.habitaciones');
     Route::get('/autocomplete/mediopagos', [AutocompleteController::class, 'mediopagos'])->name('autocomplete.mediopagos');
 
 
@@ -575,10 +430,7 @@ Route::get('/conceptos-pago-por-tipo/{tipo}', [App\Http\Controllers\ConceptoPago
     #Dashboard
     Route::get('dashboard/movventa', [App\Http\Controllers\ReportController::class, 'dashmovventa'])->name('dashventa.index');
     Route::get('dashboard/movcaja', [App\Http\Controllers\ReportController::class, 'dashmovcaja'])->name('dashcaja.index');
-    Route::get('dashboard/movhabitacion', [App\Http\Controllers\ReportController::class, 'dashmovhabitacion'])->name('dashalojamiento.index');
 
-    Route::get('/habitaciones/{id}/evolucion', [App\Http\Controllers\ReportController::class,  'evolucionHabitacion']);
-    Route::get('/habitaciones/{id}/alojamientos', [App\Http\Controllers\ReportController::class, 'alojamientosHabitacion'])->name('habitacion.alojamientos');
 
 });
 

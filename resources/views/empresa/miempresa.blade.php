@@ -87,7 +87,7 @@
                     <div class="card-action right-align" style="border-top:0px;">
                         <div id="opcionesFooter">
                             <button class="btn mt20 ml10 waves-effect waves-light yellow grey-text text-darken-3 btn-mantenimiento" id="cmdEdit" type="button" onclick="editarSucursal()">ACTUALIZAR DATOS<i class="material-icons right">edit</i></button>
-                            <a href="{{ route('verMisSucursales', $empresa->id) }}" class="btn mt20 ml10 waves-effect waves-light blue btn-mantenimiento btn-cargar-crud" data-tooltip="Ver sucursales" data-icono="fa-solid fa-landmark left" data-titulo="HOTEL DEMO - Sucursales">
+                            <a href="{{ route('verMisSucursales', $empresa->id) }}" class="btn mt20 ml10 waves-effect waves-light blue btn-mantenimiento btn-cargar-crud" data-tooltip="Ver sucursales" data-icono="fa-solid fa-landmark left" data-titulo="PULSO+ - Sucursales">
                             SUCURSALES<i class="material-icons right">account_balance</i></a>
                                                         </a>
                         </div>

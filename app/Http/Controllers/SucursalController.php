@@ -1086,9 +1086,6 @@ class SucursalController extends Controller
         DB::beginTransaction();
 
         try {
-            // Borra detalles de movimientos de habitación
-            DB::table('det_movhabitacion')->where('sucursal_id', $id)->delete();
-
             // Borra kardex
             DB::table('kardex')->where('sucursal_id', $id)->delete();
 
@@ -1098,9 +1095,6 @@ class SucursalController extends Controller
             // Borra movimientos de venta
             DB::table('movventa')->where('sucursal_id', $id)->delete();
 
-            // Borra movimientos de habitación
-            DB::table('movhabitacion')->where('sucursal_id', $id)->delete();
-
             // Borra movimientos de caja
             DB::table('movcaja')->where('sucursal_id', $id)->delete();
 
@@ -1109,11 +1103,6 @@ class SucursalController extends Controller
 
             // Actualiza caja: pone situacion = 'C' para esa sucursal
             DB::table('caja')->where('sucursal_id', $id)->update(['situacion' => 'C']);
-
-            // Actualizar habitaciones a 'Disponible' en esa sucursal
-            DB::table('habitacion')
-                ->where('sucursal_id', $id)
-                ->update(['situacion' => 'Disponible']);
 
             DB::commit();
 

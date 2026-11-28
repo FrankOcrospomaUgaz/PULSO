@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Persona;
 use App\Http\Requests\PersonaRequest;
-use App\Models\Habitacion;
 use App\Models\Menuopcione;
 use App\Models\Operacione;
 use App\Models\Perfile;
 use App\Models\Permisousuario;
 use App\Models\Personamaestro;
+use App\Models\PacienteClinico;
 use App\Models\RelParametrosucursal;
 use App\Models\Rol;
 use App\Models\Rolpersona;
@@ -78,7 +78,7 @@ public function index(Request $request)
     /**
      * Show the form for creating a new resource.
      */
-    public function create($sucursal_id, $accion, Request $request, $habitacion_id = null)
+    public function create($sucursal_id, $accion, Request $request)
     {
         // Verificar si se está agregando un acompañante
         $esAcompanante = $request->query('es_acompanante', 'false') === 'true';
@@ -123,13 +123,12 @@ public function index(Request $request)
             'roles',
             'opcion',
             'accion',
-            'habitacion_id',
             'acompanantes',
             'principal',
             'sucursal'
         ));
     }
-    public function clientecreate($sucursal_id, $accion, Request $request, $habitacion_id = null)
+    public function clientecreate($sucursal_id, $accion, Request $request)
     {
         // Verificar si se está agregando un acompañante
         $esAcompanante = $request->query('es_acompanante', 'false') === 'true';
@@ -182,7 +181,6 @@ public function index(Request $request)
             'roles',
             'opcion',
             'accion',
-            'habitacion_id',
             'acompanantes',
             'principal',
             'sucursal',
@@ -278,6 +276,23 @@ public function index(Request $request)
      */
     public function store(PersonaRequest $request)
     {
+        $clinicalData = null;
+        if ($request->boolean('registro_clinico')) {
+            $clinicalData = $request->validate([
+                'tutor_nombres' => 'nullable|string|max:180',
+                'tutor_documento' => 'nullable|string|max:30',
+                'tutor_telefono' => 'nullable|string|max:40',
+                'tutor_email' => 'nullable|email|max:150',
+                'acepta_notificaciones' => 'nullable|boolean',
+                'observaciones' => 'nullable|string|max:2000',
+            ]);
+            if ($request->filled('fechanac') && \Illuminate\Support\Carbon::parse($request->input('fechanac'))->age < 18 && !$request->filled('tutor_nombres')) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'tutor_nombres' => 'Registra al padre, madre o tutor para pacientes menores de edad.',
+                ]);
+            }
+        }
+
         DB::beginTransaction();
 
         try {
@@ -300,6 +315,25 @@ public function index(Request $request)
                 if ($personaExistente) {
                     // Si ya existe en la misma sucursal, usar el mismo registro
                     $persona = $personaExistente;
+                    if ($accion === 'CLINICA') {
+                        $personamaestro->update([
+                            'tipopersona' => $tipopersona,
+                            'nombres' => $request->input('nombres'),
+                            'apellidos' => $apellidos,
+                            'sexo' => $sexo,
+                            'fechanac' => $request->input('fechanac'),
+                        ]);
+                        $persona->update([
+                            'nombres' => $request->input('nombres'),
+                            'apellidos' => $apellidos,
+                            'direccion' => $request->input('direccion', '-') ?: '-',
+                            'email' => $request->input('email') ?: null,
+                            'telefonofijo' => $request->input('telefonofijo') ?: '-',
+                            'telefonomovil' => $request->input('telefonomovil') ?: '-',
+                            'no_grato' => $request->has('no_grato'),
+                            'distrito_id' => $request->input('distrito_id'),
+                        ]);
+                    }
                 } else {
                     // Si existe en otra sucursal, solo registrar en Persona
                     $persona = Persona::create([
@@ -381,6 +415,38 @@ public function index(Request $request)
                 ['persona_id' => $persona->id, 'rol_id' => 1, 'sucursal_id' => $sucursal_id]
             );
             }
+
+            if ($clinicalData !== null) {
+                $tipoDocumento = match ($tipopersona) {
+                    'Juridico' => 'RUC',
+                    'Carnet de Extranjería' => 'CE',
+                    'Pasaporte' => 'PASAPORTE',
+                    default => 'DNI',
+                };
+                $aceptaNotificaciones = $request->boolean('acepta_notificaciones');
+                PacienteClinico::updateOrCreate(
+                    ['persona_id' => $persona->id],
+                    [
+                        'sucursal_id' => $sucursal_id,
+                        'tipo_documento' => $tipoDocumento,
+                        'numero_documento' => $nrodoc !== '0' ? $nrodoc : null,
+                        'nombres' => $request->input('nombres'),
+                        'apellidos' => $apellidos,
+                        'fecha_nacimiento' => $request->input('fechanac'),
+                        'sexo' => $sexo,
+                        'telefono' => $request->input('telefonomovil') ?: $request->input('telefonofijo'),
+                        'email' => $request->input('email'),
+                        'direccion' => $request->input('direccion'),
+                        'tutor_nombres' => $clinicalData['tutor_nombres'] ?? null,
+                        'tutor_documento' => $clinicalData['tutor_documento'] ?? null,
+                        'tutor_telefono' => $clinicalData['tutor_telefono'] ?? null,
+                        'tutor_email' => $clinicalData['tutor_email'] ?? null,
+                        'observaciones' => $clinicalData['observaciones'] ?? null,
+                        'acepta_notificaciones' => $aceptaNotificaciones,
+                        'acepta_notificaciones_at' => $aceptaNotificaciones ? now() : null,
+                    ]
+                );
+            }
            
 
             // Manejo de acompañantes y principal
@@ -397,40 +463,7 @@ public function index(Request $request)
             DB::commit();
 
             // Redireccionar según acción
-            if ($accion == 'CHECKIN') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Check-in exitoso.',
-                    'redirect_url' => route('movhabitacion.checkin', [
-                        'id' => $request->input('habitacion_id'),
-                        'personaCreadaId' => $persona->id
-                    ]),
-                    'persona' => $persona,
-                    'personamaestro' => $personamaestro
-                ]);
-            } elseif ($accion == 'EDITCHECKIN') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Check-in exitoso.',
-                    'redirect_url' => route('movhabitacion.editCheckin', [
-                        'habitacion_id' => $request->input('habitacion_id'),
-                        'personaCreadaId' => $persona->id
-                    ]),
-                    'persona' => $persona,
-                    'personamaestro' => $personamaestro
-                ]);
-            } elseif ($accion == 'RESERVA') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Persona creada exitosamente.',
-                    'redirect_url' => route('movreserva.create', [
-                        'personaCreadaId' => $persona->id
-                    ]),
-                    'persona' => $persona,
-                    'personamaestro' => $personamaestro
-                ]);
-            }
-            elseif ($accion == 'CONTRATO') {
+            if ($accion == 'CONTRATO') {
                 return response()->json([
                     'success' => true,
                     'message' => 'Persona creada exitosamente.',
@@ -440,15 +473,6 @@ public function index(Request $request)
                     'persona' => $persona,
                     'personamaestro' => $personamaestro,
                     'tipo' => $request->input('tipo', 'CLIENTE')
-                ]);
-            }  elseif ($accion == 'CHECKOUT') {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Persona creada exitosamente.',
-                    'redirect_url' => route('movhabitacion.checkout', [
-                        'id' => $request->input('habitacion_id'),
-                        'personaCreadaId' => $persona->id
-                    ])
                 ]);
             } elseif ($accion == 'VENTA') {
                 return response()->json([
@@ -470,6 +494,12 @@ public function index(Request $request)
                     ]),
                     'persona' => $persona,
                     'personamaestro' => $personamaestro
+                ]);
+            } elseif ($accion == 'CLINICA') {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paciente registrado correctamente.',
+                    'redirect_url' => route('pacientes.index'),
                 ]);
             } elseif ($accion == 'CRUD') {
                 return response()->json([
@@ -543,6 +573,23 @@ public function index(Request $request)
      */
     public function update(PersonaRequest $request, Persona $persona)
     {
+        $clinicalData = null;
+        if ($request->boolean('registro_clinico')) {
+            $clinicalData = $request->validate([
+                'tutor_nombres' => 'nullable|string|max:180',
+                'tutor_documento' => 'nullable|string|max:30',
+                'tutor_telefono' => 'nullable|string|max:40',
+                'tutor_email' => 'nullable|email|max:150',
+                'acepta_notificaciones' => 'nullable|boolean',
+                'observaciones' => 'nullable|string|max:2000',
+            ]);
+            if ($request->filled('fechanac') && \Illuminate\Support\Carbon::parse($request->input('fechanac'))->age < 18 && !$request->filled('tutor_nombres')) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'tutor_nombres' => 'Registra al padre, madre o tutor para pacientes menores de edad.',
+                ]);
+            }
+        }
+
         DB::beginTransaction();
         
         try {
@@ -605,8 +652,50 @@ public function index(Request $request)
                     ['persona_id' => $persona->id, 'rol_id' => 1, 'sucursal_id' => $sucursal_id]
                 );
             }
+
+            if ($clinicalData !== null) {
+                $tipoDocumento = match ($tipopersona) {
+                    'Juridico' => 'RUC',
+                    'Carnet de Extranjería' => 'CE',
+                    'Pasaporte' => 'PASAPORTE',
+                    default => 'DNI',
+                };
+                $aceptaNotificaciones = $request->boolean('acepta_notificaciones');
+                $paciente = PacienteClinico::where('persona_id', $persona->id)->first();
+                PacienteClinico::updateOrCreate(
+                    ['persona_id' => $persona->id],
+                    [
+                        'sucursal_id' => $sucursal_id,
+                        'tipo_documento' => $tipoDocumento,
+                        'numero_documento' => $nrodoc !== '0' ? $nrodoc : null,
+                        'nombres' => $request->input('nombres'),
+                        'apellidos' => $apellidos,
+                        'fecha_nacimiento' => $request->input('fechanac'),
+                        'sexo' => $sexo,
+                        'telefono' => $request->input('telefonomovil') ?: $request->input('telefonofijo'),
+                        'email' => $request->input('email'),
+                        'direccion' => $request->input('direccion'),
+                        'tutor_nombres' => $clinicalData['tutor_nombres'] ?? null,
+                        'tutor_documento' => $clinicalData['tutor_documento'] ?? null,
+                        'tutor_telefono' => $clinicalData['tutor_telefono'] ?? null,
+                        'tutor_email' => $clinicalData['tutor_email'] ?? null,
+                        'observaciones' => $clinicalData['observaciones'] ?? null,
+                        'acepta_notificaciones' => $aceptaNotificaciones,
+                        'acepta_notificaciones_at' => $aceptaNotificaciones
+                            ? ($paciente?->acepta_notificaciones_at ?? now())
+                            : null,
+                    ]
+                );
+            }
     
             DB::commit();
+            if ($accion == 'CLINICA') {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paciente actualizado correctamente.',
+                    'redirect_url' => route('pacientes.index'),
+                ]);
+            }
             if ($accion == 'CRUD') {
                 return response()->json([
                     'success' => true,

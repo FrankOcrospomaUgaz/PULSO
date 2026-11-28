@@ -118,10 +118,7 @@ $cajaTooltip = $cajaAperurada ? ($cajaAbierta ? 'Aperturada' : 'Cerrada') : 'Sin
     @endguest
 
     @php
-        $esLimpiador = $persona->rolpersonas->contains(
-            fn($rolPersona) => $rolPersona->rol->descripcion === 'Limpiador',
-        );
-        $logoutRoute = $esLimpiador ? route('housekeeping.logout', $persona->sucursal->ruc) : route('logout');
+        $logoutRoute = route('logout');
     @endphp
     <input type="hidden" id="logoutRoute" value="{{ $logoutRoute }}">
     <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
@@ -604,11 +601,6 @@ $cajaTooltip = $cajaAperurada ? ($cajaAbierta ? 'Aperturada' : 'Cerrada') : 'Sin
             });
         }
 
-        if ($('.habitacion-select2').length) {
-            $('.habitacion-select2').select2({
-                theme: "classic",
-                width: '100%',
-            });
-        }
+
     });
 </script>

@@ -65,7 +65,7 @@
     </style>
 </head>
 <body>
-    <div class="left" style="background-image: url('{{ asset('img/Hotel-room-wallpaper.jpg') }}');"></div>
+    <div class="left" style="background: linear-gradient(135deg, #111d46, #1f4da2);"></div>
     <div class="right">
         <h1>419 😅</h1>
         <p>Tu sesión ha expirado. Por favor, vuelve a ingresar.</p>

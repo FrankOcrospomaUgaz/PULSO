@@ -8,11 +8,9 @@ use App\Models\Anulacion;
 use App\Models\Caja;
 use App\Models\DetMovventum;
 use App\Models\Kardex;
-use App\Models\HistorialHabitacion;
 
 use App\Models\Mediopago;
 use App\Models\Movcaja;
-use App\Models\Movhabitacion;
 use App\Models\Movventum;
 use App\Models\Operacione;
 use App\Models\Persona;
@@ -544,68 +542,6 @@ class RelTurnocajaController extends Controller
                 });
 
 
-            $historialhabitacion = HistorialHabitacion::where('relturnocaja_id', $ultimoTurno->id)
-                ->whereHas('movhabitacion', function ($query) {
-                    $query->whereNull('deleted_at'); // solo los que no están eliminados
-                })
-                ->with('movhabitacion')
-                ->get()
-                ->groupBy('movhabitacion_id')
-                ->map(function ($items) {
-                    return $items->sortByDesc('created_at')->first();
-                })
-                ->values();
-
-
-            $historialhabitacionPago = HistorialHabitacion::where('relturnocaja_id', $turnocajaId)
-                ->get()
-                ->groupBy('movhabitacion_id')
-                ->map(function ($items) use ($turnocajaId) {
-                    $ultimoRegistro = $items->sortByDesc('created_at')->first(); // Obtiene el último registrado
-
-                    // Verificar si el pago ya fue realizado en un turno ANTERIOR
-                    $tienePagoEnTurnoAnterior = HistorialHabitacion::where('movhabitacion_id', $ultimoRegistro->movhabitacion_id)
-                        ->where('relturnocaja_id', '<', $turnocajaId) // Solo en turnos anteriores
-                        ->where('situacion_pago', 'S')
-                        ->exists();
-
-                    return $tienePagoEnTurnoAnterior ? null : $ultimoRegistro;
-                })
-                ->filter() // Remueve los nulos (los que ya fueron pagados en otro turno)
-                ->values();
-
-
-
-
-            //  dd( $movhabitacioneshistorial);
-
-            // Filtrar movimientos de habitaciones con situación 'C' relacionados al turno
-
-
-
-            $movhabitacionessincheckoutpagadas = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'N' && $historialhabitacion->situacion_pago === 'S';
-            });
-            $movhabitacionessinpagar = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'N' && $historialhabitacion->situacion_pago === 'N';
-            });
-            $movhabitacionesconcheckout = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'S' && $historialhabitacion->situacion_pago === 'S';
-            });
-
-            $totalHabitacionesconcheck = $historialhabitacion->filter(function ($hab) {
-                return  $hab->situacion_checkout == 'S';
-            })->sum('movhabitacion.total');
-            $totalHabitacionessincheck = $movhabitacionessincheckoutpagadas->filter(function ($hab) {
-                return empty($hab->fecha_salida_real);
-            })->sum('movhabitacion.total');
-            $totalHabitacionessincheckEnDeuda = $movhabitacionessinpagar->filter(function ($hab) {
-                return empty($hab->fecha_salida_real);
-            })->sum('movhabitacion.total');
-            $totalHabitaciones = $historialhabitacionPago->filter(function ($hab) {
-                return $hab->situacion_pago !== 'N';
-            })->sum('movhabitacion.total');
-
             // Egresos por métodos de pago
             $egresosPagados = [];
             foreach ($mediosPago as $medio) {
@@ -730,24 +666,9 @@ class RelTurnocajaController extends Controller
 
             $caja = Caja::findOrFail($ultimoTurno->movcajainicio->Caja->id);
 
-            $anulacionesAlojamientos = collect(); // por seguridad
-
-            if ($ultimoTurno) {
-                $anulacionesAlojamientos = Movhabitacion::whereHas('movimiento', function ($q) {
-                    $q->where('situacion', 'D'); // Anulado
-                })
-                    ->where('sucursal_id', $sucursal->id)
-                    ->whereBetween('fechaingreso', [
-                        $ultimoTurno->fechainicio,
-                        $ultimoTurno->fechafin ?? now(), // por si el turno sigue abierto
-                    ])
-                    ->with('movimiento')
-                    ->get();
-            }
             // Preparar los datos para el PDF
             $data = [
                 'caja' => $caja,
-                'totalHabitaciones' => $totalHabitaciones,
                 'sucursal' => $sucursal,
                 'totales' => $totales,
                 'detallesAgrupados' => $detallesAgrupados,
@@ -756,27 +677,16 @@ class RelTurnocajaController extends Controller
                 'anulacionesVentasPorCategoria' => $anulacionesVentas,
                 'anulacionesProductosPorCategoria' => $anulacionesProductos,
                 'consolidadoPorCategoria' => $consolidadoPorCategoria,
-                'movhabitacionessinpagar' => $movhabitacionessinpagar,
                 'egresosPagados' => $egresosPagados,
                 'ingresosPagados' => $ingresosPagados,
                 'ventasPagadas' => $ventasPagadas,
                 'ultimoTurno' => $ultimoTurno,
-                'totalHabitaciones' => $totalHabitaciones,
-                'movhabitacionessinpagar' => $movhabitacionessinpagar,
-                'movhabitacionessincheckoutpagadas' => $movhabitacionessincheckoutpagadas,
-                'movhabitacionesconcheckout' => $movhabitacionesconcheckout,
                 'ventasPorMetodos' => $ventasPorMetodos,
-                'totalHabitacionesconcheck' => $totalHabitacionesconcheck,
-                'historialhabitacion' => $historialhabitacion,
-                'totalHabitacionessincheckEnDeuda' => $totalHabitacionessincheckEnDeuda,
-                'totalHabitacionessincheck' => $totalHabitacionessincheck,
                 'ventasPorMetodos' => $ventasPorMetodos,
-                'historialhabitacionPago' => $historialhabitacionPago,
                 'ventasPorTipoDocumento' => $ventasPorTipoDocumento,
                 'anulaciones' => $anulaciones,
                 'movcajadinero' => $movcajadinero,
                 'descuentosPorPersona' => $descuentosPorPersona,
-                'anulacionesAlojamientos' => $anulacionesAlojamientos,
 
             ];
                         $pdf = PDF::loadView('movcaja.pdf_cierre', $data)
@@ -1094,93 +1004,6 @@ class RelTurnocajaController extends Controller
             // Agrupar detalles por categoría
             $detallesPorCategoria = $detallesVentaPorProducto->groupBy('categoria');
             // dd( $detallesVentaPorProducto   );
-            $historialhabitacion = HistorialHabitacion::where('relturnocaja_id', $ultimoTurno->id)
-                ->whereHas('movhabitacion', function ($query) {
-                    $query->whereNull('deleted_at'); // solo los que no están eliminados
-                })
-                ->with('movhabitacion')
-                ->get()
-                ->groupBy('movhabitacion_id')
-                ->map(function ($items) {
-                    return $items->sortByDesc('created_at')->first();
-                })
-                ->values();
-            $historialhabitacionPago = HistorialHabitacion::where('relturnocaja_id',  $ultimoTurno->id)
-                ->get()
-                ->groupBy('movhabitacion_id')
-                ->map(function ($items) {
-                    $ultimoRegistro = $items->sortByDesc('created_at')->first(); // Obtiene el último registrado
-
-                    // Verificar si en TODAS las ocurrencias de este movhabitacion_id existe un pago 'S' en otro turno
-                    $tienePagoEnOtroTurno = HistorialHabitacion::where('movhabitacion_id', $ultimoRegistro->movhabitacion_id)
-                        ->where('relturnocaja_id', '!=', $ultimoRegistro->relturnocaja_id)
-                        ->where('situacion_pago', 'S')
-                        ->exists();
-
-                    return $tienePagoEnOtroTurno ? null : $ultimoRegistro;
-                })
-                ->filter() // Remueve los nulos (los que ya fueron pagados en otro turno)
-                ->values();
-            $movhabitacioneshistorial = Movhabitacion::whereIn('id', $historialhabitacion->pluck('movhabitacion_id'))->get();
-
-            // Agregar situacion_checkout y situacion_pago a cada movhabitacion
-            $movhabitacioneshistorial->each(function ($movhabitacion) use ($historialhabitacion) {
-                $historial = $historialhabitacion->firstWhere('movhabitacion_id', $movhabitacion->id);
-                if ($historial) {
-                    $movhabitacion->situacion_checkout = $historial->situacion_checkout;
-                    $movhabitacion->situacion_pago = $historial->situacion_pago;
-                }
-            });
-            //  dd( $movhabitacioneshistorial);
-
-            // Filtrar movimientos de habitaciones con situación 'C' relacionados al turno
-            $movhabitaciones = Movhabitacion::where('sucursal_id', $sucursal->id)
-                ->whereIn('id', $historialhabitacion->where('situacion_pago', 'S')->pluck('movhabitacion_id')) // Filtrar solo los pagados
-                ->get()
-                ->map(function ($hab) {
-                    // Obtener productos consumidos en base al movimiento de la habitación
-                    $productosConsumidos = DetMovventum::whereHas('movventum', function ($query) use ($hab) {
-                        $query->where('movimiento_id', $hab->movimiento_id);
-                    })->get();
-
-                    // Calcular el total de productos consumidos
-                    $totalProductosConsumidos = $productosConsumidos->sum(function ($producto) {
-                        $datosProducto = json_decode($producto->json_producto, true);
-                        $cantidad = $datosProducto['cantidad'] ?? 0;
-                        $precioUnitario = $datosProducto['precio_unitario'] ?? 0;
-                        return $cantidad * $precioUnitario;
-                    });
-
-                    // Agregar el total como un atributo adicional del modelo
-                    $hab->precio_productos = $totalProductosConsumidos;
-                    return $hab;
-                });
-
-
-
-            $movhabitacionessincheckoutpagadas = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'N' && $historialhabitacion->situacion_pago === 'S';
-            });
-            $movhabitacionessinpagar = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'N' && $historialhabitacion->situacion_pago === 'N';
-            });
-            $movhabitacionesconcheckout = $historialhabitacion->filter(function ($historialhabitacion) {
-                return $historialhabitacion->situacion_checkout === 'S' && $historialhabitacion->situacion_pago === 'S';
-            });
-
-            $totalHabitacionesconcheck = $historialhabitacion->filter(function ($hab) {
-                return  $hab->situacion_checkout == 'S';
-            })->sum('movhabitacion.total');
-            $totalHabitacionessincheck = $movhabitacionessincheckoutpagadas->filter(function ($hab) {
-                return empty($hab->fecha_salida_real);
-            })->sum('movhabitacion.total');
-            $totalHabitacionessincheckEnDeuda = $movhabitacionessinpagar->filter(function ($hab) {
-                return empty($hab->fecha_salida_real);
-            })->sum('movhabitacion.total');
-            $totalHabitaciones = $historialhabitacion->filter(function ($hab) {
-                return $hab->situacion_pago !== 'N';
-            })->sum('movhabitacion.total');
-
             // Egresos por métodos de pago
             $egresosPagados = [];
             foreach ($mediosPago as $medio) {
@@ -1209,29 +1032,17 @@ class RelTurnocajaController extends Controller
             // Preparar los datos para el PDF
             $data = [
                 'caja' => $caja,
-                'totalHabitaciones' => $totalHabitaciones,
                 'sucursal' => $sucursal,
                 'totales' => $totales,
                 'detallesAgrupados' => $detallesAgrupados,
                 'detallesVentaPorProducto' => $detallesVentaPorProducto,
                 'detallesPorCategoria' => $detallesPorCategoria,
-                'movhabitacionessinpagar' => $movhabitacionessinpagar,
-                'movhabitaciones' => $movhabitaciones, // Pasamos los datos de habitaciones
                 'egresosPagados' => $egresosPagados,
                 'ingresosPagados' => $ingresosPagados,
                 'ventasPagadas' => $ventasPagadas,
                 'ultimoTurno' => $ultimoTurno,
-                'totalHabitaciones' => $totalHabitaciones,
-                'movhabitacionessinpagar' => $movhabitacionessinpagar,
-                'movhabitacionessincheckoutpagadas' => $movhabitacionessincheckoutpagadas,
-                'movhabitacionesconcheckout' => $movhabitacionesconcheckout,
                 'ventasPorMetodos' => $ventasPorMetodos,
-                'totalHabitacionesconcheck' => $totalHabitacionesconcheck,
-                'historialhabitacion' => $historialhabitacion,
-                'totalHabitacionessincheckEnDeuda' => $totalHabitacionessincheckEnDeuda,
-                'totalHabitacionessincheck' => $totalHabitacionessincheck,
                 'ventasPorMetodos' => $ventasPorMetodos,
-                'historialhabitacionPago' => $historialhabitacionPago,
             ];
 
             // Cargar la vista con los datos para el PDF

@@ -105,7 +105,7 @@
         <div style="display: flex; align-items: flex-start; gap: 5px; width: 100%;">
             <!-- Input con label -->
             <div class="input-field" style="flex: 1; margin-top: 0;">
-                <input type="text" id="search-input" class="validate" 
+                <input type="text" id="search-input" class="validate"
                     data-url-base="{{ route('movventa.index') }}">
                 <label for="search-input">Buscar</label>
             </div>
@@ -164,7 +164,7 @@
     </div>
 </div>
 
-                    
+
 
                     <div id="tb-container" class="table-wrapper">
                         <!-- Contenedor con scroll horizontal solo para la tabla -->
@@ -245,15 +245,8 @@
                                                     data-badge-caption="{{ $badgeTexto }}"></span>
                                             </td>
 
-                                                @if ($movventa->movhabitacion)
-                                                    <td> {{ $movventa->movhabitacion->movimiento->tipodocumento->tipomovimiento->descripcion ?? 'N/A' }}
-                                                        -
-                                                        {{$movventa->movhabitacion->movimiento->numero }}
-                                                    </td>
-                                                @else
-                                                    <td>{{ $movventa->movimiento->tipodocumento->tipomovimiento->descripcion ?? 'N/A' }}
-                                                    </td>
-                                                @endif
+                                                <td>{{ $movventa->movimiento->tipodocumento->tipomovimiento->descripcion ?? 'N/A' }}</td>
+
                                             <td>
                                                 @foreach ($operaciones as $operacion)
                                                     @if ($operacion->tipo == 'Registro')
@@ -306,15 +299,7 @@
                                                                 {!! $operacion->imagen !!}
                                                             </a>
                                                         @endif
-                                                        @if($operacion->accion == 'movventa.alojamiento' && $movventa->movhabitacion && $movventa->movimiento->situacion == 'Activado')
-                                                            <a href="{{ route($operacion->accion, $movventa->id) }}"
-                                                                class="btn-floating {{ $operacion->color }} darken-1 waves-light btn-cargar-crud tooltipped"
-                                                                data-icono="{{  $operacion->imagen }}"
-                                                                data-titulo="{{ $operacion->descripcion }}"
-                                                                data-tooltip="{{ $operacion->comentario }}">
-                                                                {!! $operacion->imagen !!}
-                                                            </a>
-                                                        @endif
+
                                                     @endif
                                                 @endforeach
                                                 @if (($movventa->movimiento->tipodocumento_id == 9 || ($movventa->movimiento->tipodocumento->nombre ?? '') === 'Ticket de venta') && $movventa->movimiento->situacion == 'Activado')

@@ -77,10 +77,14 @@ nav .nav-content i {
 .btn-large,
 .btn-small,
 button[type="submit"]:not(.swal2-styled):not(.pulso-login-submit) {
-    border-radius: 10px;
+    border-radius: 999px !important;
     background-color: var(--pulso-blue);
     box-shadow: 0 5px 14px rgba(30, 61, 138, .18);
     transition: background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+button:not(.btn-floating):not(.slick-prev):not(.slick-next):not(.swal2-styled):not(.btn-flat) {
+    border-radius: 999px !important;
 }
 
 .btn:hover,
@@ -140,6 +144,12 @@ textarea.materialize-textarea:focus:not([readonly]) {
     background: var(--pulso-white);
     box-shadow: 0 28px 90px rgba(17, 25, 50, .24);
     overflow: hidden;
+}
+
+/* El modal CRUD principal debe aprovechar el ancho de las pantallas grandes. */
+#modal.modal {
+    width: min(94vw, 1280px);
+    max-height: 88vh;
 }
 
 .modal .modal-content {
@@ -1156,5 +1166,105 @@ textarea.materialize-textarea:focus:not([readonly]) {
 
     .pulso-login-card {
         padding: 22px 24px;
+    }
+}
+
+/* Formularios clínicos: mismos campos Materialize y acciones que los CRUD base. */
+#modal:has(.clinica-form) {
+    width: min(94vw, 1200px);
+    max-height: 86vh;
+    overflow: hidden;
+}
+
+#modal:has(.clinica-form) #modal-body-content {
+    max-height: 86vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+#modal:has(.clinica-persona-form) {
+    width: min(96vw, 1280px);
+    max-height: 90vh;
+}
+
+#modal:has(.clinica-persona-form) #modal-body-content {
+    max-height: 90vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.clinica-form .card-content {
+    padding: 24px 28px 8px;
+}
+
+.clinica-form .card-title {
+    display: block;
+    margin-bottom: 16px;
+    font-size: 1.6rem;
+    line-height: 1.3;
+}
+
+.clinica-form .card-body {
+    padding: 4px 28px 0;
+}
+
+.clinica-form .row {
+    margin-bottom: 8px;
+}
+
+.clinica-form .input-field {
+    margin-top: 1rem;
+    margin-bottom: 1.15rem;
+}
+
+.clinica-form .input-field > label {
+    max-width: calc(100% - 1.5rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #68758e;
+    font-size: .92rem;
+    font-weight: 600;
+}
+
+.clinica-form .input-field > label.active {
+    color: #68758e;
+}
+
+.clinica-form .divider {
+    margin: 8px 0 12px;
+}
+
+.clinica-form .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 10px -28px 0;
+    padding: 12px 28px;
+}
+
+@media (max-width: 600px) {
+    #modal:has(.clinica-form) {
+        width: 96vw;
+        max-height: 90vh;
+    }
+
+    #modal:has(.clinica-form) #modal-body-content {
+        max-height: 90vh;
+    }
+
+    .clinica-form .card-content {
+        padding: 20px 18px 6px;
+    }
+
+    .clinica-form .card-body {
+        padding: 4px 18px 0;
+    }
+
+    .clinica-form .modal-footer {
+        margin-right: -18px;
+        margin-left: -18px;
+        padding: 12px 18px;
     }
 }

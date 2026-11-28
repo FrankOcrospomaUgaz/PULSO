@@ -88,10 +88,4 @@ class   Persona extends Model
     {
         return $this->hasOne(User::class, 'persona_id', 'id');
     }
-public function huespedes()
-{
-    return $this->hasMany(\App\Models\Huesped::class, 'persona_id', 'id');
-}
-
-
 }

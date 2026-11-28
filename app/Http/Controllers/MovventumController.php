@@ -13,7 +13,6 @@ use App\Models\Facturador;
 use App\Models\Kardex;
 use App\Models\Mediopago;
 use App\Models\Movcaja;
-use App\Models\Movhabitacion;
 use App\Models\Movimiento;
 use App\Models\Igv;
 
@@ -39,7 +38,6 @@ use App\Http\Controllers\FacturadorController;
 use App\Helpers\NumeroTexto;
 use App\Services\CorrelativoService;
 use App\Services\InventarioVentaService;
-use App\Models\MovhabitacionHabitacion;
 use App\Models\Pasarelapago;
 use App\Models\RelOperacionsucursal;
 use App\Models\RelParametrosucursal;
@@ -48,11 +46,6 @@ use Barryvdh\Snappy\Facades\SnappyPdf as Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\VentasExport;
 use App\Models\Anulacion;
-use App\Models\DetMovhabitacion;
-use App\Models\Habitacion;
-use App\Models\Huesped;
-use App\Models\Movreserva;
-use App\Models\MovreservaHabitacion;
 use Illuminate\Support\Facades\Config;
 use GuzzleHttp\Client;
 
@@ -1032,10 +1025,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             })
             ->toArray();
 
-        // Obtener los detalles de alojamiento relacionados
-        $detallesAlojamiento = Movhabitacion::where('movimiento_id', $movventa->movimiento_id)
-            ->with(['habitacion'])
-            ->get();
         $medio_pagos = Mediopago::where('situacion', true)->get();
         $pos = Pasarelapago::where('situacion', true)->get(); // Tabla para P.O.S.
         $tarjetas = Tarjetum::where('situacion', true)->get(); // Tabla para Tarjetas
@@ -1060,7 +1049,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             'detallesMovimientos',
             'medio_pagos',
             'detallesMovimientosJson',
-            'detallesAlojamiento',
             'sucursal_id'
         ));
     }
@@ -1178,10 +1166,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 })
                 ->toArray();
 
-            // Obtener los detalles de alojamiento relacionados
-            $detallesAlojamiento = Movhabitacion::where('movimiento_id', $movventa->movimiento_id)
-                ->with(['habitacion', 'movreserva'])
-                ->get();
             $medio_pagos = Mediopago::where('situacion', true)->get();
             $pos = Pasarelapago::where('situacion', true)->get(); // Tabla para P.O.S.
             $tarjetas = Tarjetum::where('situacion', true)->get(); // Tabla para Tarjetas
@@ -1206,7 +1190,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'detallesMovimientos',
                 'medio_pagos',
                 'detallesMovimientosJson',
-                'detallesAlojamiento'
             ));
         } catch (\Exception $e) {
             return response()->json([
@@ -1521,47 +1504,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 throw ValidationException::withMessages(['venta' => 'La venta ya fue anulada.']);
             }
             $movimientoCaja = Movimiento::findOrFail($movventa->movcaja->movimiento_id);
-            $movhabitacion = Movhabitacion::find($movventa->movhabitacion_id);
-            $detMovventaIds = $movventa->detMovventas->pluck('id')->filter()->values();
-            $detallesHabitacionAsociados = collect();
-            $ventaSoloProductos = $movhabitacion
-                && $movventa->detMovventas->isNotEmpty()
-                && $movventa->detMovventas->every(fn($detalle) => !is_null($detalle->producto_id));
-
-            if ($movhabitacion && $detMovventaIds->isNotEmpty()) {
-                $detallesHabitacionAsociados = DetMovhabitacion::where('movhabitacion_id', $movhabitacion->id)
-                    ->whereIn('det_movventa_id', $detMovventaIds)
-                    ->get();
-            }
-
-            if ($ventaSoloProductos && $detallesHabitacionAsociados->isEmpty()) {
-                $candidatos = collect();
-
-                foreach ($movventa->detMovventas as $detalleVenta) {
-                    $candidato = DetMovhabitacion::where('movhabitacion_id', $movhabitacion->id)
-                        ->where('situacion', 'P')
-                        ->where('producto_id', $detalleVenta->producto_id)
-                        ->where('cantidad', $detalleVenta->cantidad)
-                        ->where('monto', $detalleVenta->monto)
-                        ->orderByDesc('id')
-                        ->first();
-
-                    if ($candidato) {
-                        $candidatos->push($candidato);
-                    }
-                }
-
-                $detallesHabitacionAsociados = $candidatos->unique('id')->values();
-            }
-
-            $esPagoProductosAlojamiento = $movhabitacion
-                && ($detMovventaIds->isNotEmpty() || $ventaSoloProductos)
-                && $detallesHabitacionAsociados->isNotEmpty()
-                && (
-                    $ventaSoloProductos
-                    || $detMovventaIds->diff($detallesHabitacionAsociados->pluck('det_movventa_id')->filter()->unique())->isEmpty()
-                );
-
             $usuario = Auth::user();
 
             // Marcar el movimiento como anulado
@@ -1577,7 +1519,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             ]);
 
             // Restaurar solo salidas que existan en el kárdex; ventas históricas sin salida quedan intactas.
-            if (!$esPagoProductosAlojamiento) app(InventarioVentaService::class)->revertirSalida($movventa, $movimientoVenta);
+            app(InventarioVentaService::class)->revertirSalida($movventa, $movimientoVenta);
 
             // Crear nuevo movimiento duplicando la info del anterior
             $tipodocumento = $movimientoVenta->tipodocumento;
@@ -1585,49 +1527,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
             
 
-            // 🟢 Verificar y actualizar Movreserva
-            $movreserva = Movreserva::find($movventa->movreserva_id);
-            if ($movreserva && !$esPagoProductosAlojamiento) {
-                $movreserva->update([
-                    'estado' => 'EN ATENCIÓN',
-                ]);
-                MovreservaHabitacion::where('movreserva_id', $movreserva->id)
-                    ->update(['situacion' => 'EN ATENCIÓN']);
-            }
-
-            // 🔵 Verificar y actualizar Movhabitacion
-            if ($movhabitacion) {
-                if ($esPagoProductosAlojamiento) {
-                    DetMovhabitacion::whereIn('id', $detallesHabitacionAsociados->pluck('id'))
-                        ->update([
-                            'situacion' => 'N',
-                            'det_movventa_id' => null,
-                        ]);
-                } else {
-                    $movimientoHab = Movimiento::findOrFail($movhabitacion->movimiento_id);
-                    $movimientoHab->update(['situacion' => 'A']);
-
-                    $movhabitacion->update([
-                        'situacion' => 'A',
-                        'fecha_salida_real' => null,
-                        'movreserva_id' => $movreserva->id ?? $movhabitacion->movreserva_id,
-                    ]);
-
-                    $detalles = MovhabitacionHabitacion::where('movhabitacion_id', $movhabitacion->id)->get();
-
-                    foreach ($detalles as $detalle) {
-                        $detalle->update([
-                            'situacion' => 'A',
-                            'fechacheckout' => null,
-                        ]);
-                    }
-
-                    $habitacionIds = $detalles->pluck('habitacion_id')->filter()->unique();
-                    if ($habitacionIds->isNotEmpty()) {
-                        Habitacion::whereIn('id', $habitacionIds)->update(['situacion' => 'Ocupada']);
-                    }
-                }
-            }
 
 
             DB::commit();
@@ -1703,18 +1602,9 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'sucursal_id' => $sucursal->id,
             ]);
 
-            // Actualizar Movhabitacion (si existe)
-            $movhabitacion = Movhabitacion::where('id', $movventa->movhabitacion_id)->first();
-            if ($movhabitacion) {
-                $nuevoMovimiento->update(['movimiento_id' => $movhabitacion->movimiento_id]);
-            }
             $movcaja = Movcaja::where('movimiento_id', $movventa->movcaja->movimiento_id)->first();
             $movimientomovcaja = Movimiento::find( $movcaja->movimiento_id);
             $movimientomovcaja->update(['movimiento_id' => $nuevoMovimiento->id]);
-            // Actualizar Movreserva (si existe)
-            $movreserva = Movreserva::where('id', $movventa->movreserva_id)->first();
-         
-
             // Crear nuevo movventa copiando todos los campos necesarios
             $nuevoMovventa = Movventum::create([
                 'json_sucursal' => $movventa->json_sucursal,
@@ -1731,11 +1621,8 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 'igv' => $movventa->igv,
                 'total' => $movventa->total,
                 'tipo_cobro' => $movventa->tipo_cobro,
-                'movearlylate_id' => $movventa->movearlylate_id,
                 'movimiento_id' => $nuevoMovimiento->id,
                 'sucursal_id' => $movventa->sucursal_id,
-                'movhabitacion_id' => $movhabitacion->id ?? null,
-                'movreserva_id' => $movreserva->id ?? null,
                 'detraccion' => $movventa->detraccion ?? 'N',
                 'porcentaje_detraccion' => $movventa->porcentaje_detraccion ?? 0,
                 'cuenta_detraccion' => $movventa->cuenta_detraccion ?? '',
@@ -1864,46 +1751,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
         // Calcular o definir el número del comprobante
         $numero_comprobante = $movventa->serie . '-' . $correlativo;
 
-        // 🔹 Obtener todos los registros de `movhabitacion_habitacion` con el mismo `movventa_id`
-        $movHabitacionesHab = MovhabitacionHabitacion::where('movventa_id', $movventa->id)
-            ->with(['habitacion.tipohabitacion', 'movhabitacion'])
-            ->get();
-
-        // Si no se encuentran registros en MovhabitacionHabitacion
-        if ($movHabitacionesHab->isEmpty()) {
-            // Obtener el movimiento_id de la tabla Movventa
-            $movimiento_id = $movventa->movimiento_id;
-
-            // Buscar el Movhabitacion usando el movimiento_id
-            $movHabitacionesHab = MovhabitacionHabitacion::join('movhabitacion', 'movhabitacion.id', '=', 'movhabitacion_habitacion.movhabitacion_id')
-                ->where('movhabitacion.movimiento_id', $movimiento_id)
-                ->with(['habitacion.tipohabitacion', 'movhabitacion']) // Cargar las relaciones necesarias
-                ->get();
-        }
-
-
-
-        if ($movHabitacionesHab->count() > 1) {
-            // 🔹 Tomar el primer registro y modificar solo el total
-            $movHabitacionHab = $movHabitacionesHab->first();
-            $movHabitacionHab->total = $movHabitacionesHab->sum('total'); // Sumar solo los totales
-        } else {
-            // Si solo hay un registro, tomarlo como está
-            $movHabitacionHab = $movHabitacionesHab->first();
-        }
-
-
-        $alojamiento = $movHabitacionHab
-            ? [
-                'habitacion' => $movHabitacionHab->habitacion->numero ?? 'N/A',
-                'tipo' => $movHabitacionHab->habitacion->tipohabitacion->nombre ?? 'N/A',
-                'costo' => $movHabitacionHab->total ?? 0,
-                'dias' => $movHabitacionHab->dias ?? 0,
-                'horas' => $movHabitacionHab->horas ?? 0,
-                'modalidad' => $movHabitacionHab->modalidad ?? 'N/A',
-            ]
-            : null;
-
         // Preparar datos para la vista
         $comprobante = (object) [
             'nombre' => 'Comprobante de Venta',
@@ -1934,7 +1781,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             'total_monto' => $movventa->total,
             'moneda_simbolo' => $movventa->moneda == 'USD' ? '$' : 'S/',
             'textoQR' => $this->generarTextoQR($movventa, $fechaComprobante),
-            'alojamiento' => $alojamiento, // Información sobre el alojamiento
             'observacion' => $movventa->movimiento->comentario,
 
         ]);
@@ -2001,45 +1847,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
         // Calcular o definir el número del comprobante
         $numero_comprobante = $movventa->serie . '-' . $correlativo;
 
-        // 🔹 Obtener todos los registros de `movhabitacion_habitacion` con el mismo `movventa_id`
-        $movHabitacionesHab = MovhabitacionHabitacion::where('movventa_id', $movventa->id)
-            ->with(['habitacion.tipohabitacion', 'movhabitacion'])
-            ->get();
-        // Si no se encuentran registros en MovhabitacionHabitacion
-        if ($movHabitacionesHab->isEmpty()) {
-            // Obtener el movimiento_id de la tabla Movventa
-            $movimiento_id = $movventa->movimiento_id;
-
-            // Buscar el Movhabitacion usando el movimiento_id
-            $movHabitacionesHab = MovhabitacionHabitacion::join('movhabitacion', 'movhabitacion.id', '=', 'movhabitacion_habitacion.movhabitacion_id')
-                ->where('movhabitacion.movimiento_id', $movimiento_id)
-                ->with(['habitacion.tipohabitacion', 'movhabitacion']) // Cargar las relaciones necesarias
-                ->get();
-        }
-        if ($movHabitacionesHab->count() > 1) {
-            // 🔹 Tomar el primer registro y modificar solo el total
-            $movHabitacionHab = $movHabitacionesHab->first();
-            $movHabitacionHab->total = $movHabitacionesHab->sum('total'); // Sumar solo los totales
-        } else {
-            // Si solo hay un registro, tomarlo como está
-            $movHabitacionHab = $movHabitacionesHab->first();
-        }
-
-
-
-        $alojamiento = $movHabitacionHab
-            ? [
-                'habitacion' => $movHabitacionHab->habitacion->numero ?? 'N/A',
-                'modalidad' => $movHabitacionHab->modalidad ?? 'N/A',
-                'tipo' => $movHabitacionHab->habitacion->tipohabitacion->nombre ?? 'N/A',
-                'costo' => $movHabitacionHab->total ?? 0,
-                'preciounitario' => $movHabitacionHab->tarifa ?? 0,
-
-                'dias' => $movHabitacionHab->dias ?? 0,
-                'horas' => $movHabitacionHab->horas ?? 0,
-            ]
-            : null;
-        //  dd($movHabitacionHab);
         // Preparar datos para la vista
         $comprobante = (object) [
             'nombre' => 'Comprobante de Venta',
@@ -2075,7 +1882,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             'total_monto' => $movventa->total,
             'moneda_simbolo' => $movventa->moneda == 'USD' ? '$' : 'S/',
             'textoQR' => $this->generarTextoQR($movventa, $fechaComprobante),
-            'alojamiento' => $alojamiento, // Información sobre el alojamiento
         ]);
 
         // Datos generales del comprobante
@@ -2103,7 +1909,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             'ruc' => $sucursal->ruc,
             'razonsocial' => $sucursal->razonsocial,
             'direccion' => $sucursal->direccion,
-            'alojamiento' => $alojamiento, // Información sobre el alojamiento
 
 
 
@@ -2125,7 +1930,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
         // Establecer el tamaño de papel de manera dinámica
         $pdf = Pdf::loadView('movventa.comprobante_ticket', 
-        compact('dataGeneral', 'dataDetalles', 'numero_comprobante', 'alojamiento', 'sucursal', 'xml_data', 'movventa'))
+        compact('dataGeneral', 'dataDetalles', 'numero_comprobante', 'sucursal', 'xml_data', 'movventa'))
           ->setOption('margin-top', 2)
                 ->setOption('margin-bottom', 8)
                 ->setOption('margin-left', 2)
@@ -2491,7 +2296,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
         $dctoPorcentaje = $request->input('dcto_porcentaje', 0);
         $comentario = $request->input('comentario', '');
         $dctoTotalMonto = $request->input('dcto_total_monto', 0);
-        $habitacionNumero = $request->input('habitacion_numero', '');
         $operationType = $request->input('operation_type', 'descuento_venta');
         $movventaId = $request->input('movventa_id');
         $movventa = null;
@@ -2521,7 +2325,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                     $telefono,
                     $dctoPorcentaje,
                     $comentario,
-                    $habitacionNumero,
                     $dctoTotalMonto,
                     $operationType,
                     $movventa,
@@ -2545,7 +2348,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             return $this->enviarCorreo(
                 $codigo,
                 $correo,
-                $habitacionNumero,
                 $dctoPorcentaje,
                 $dctoTotalMonto,
                 $comentario,
@@ -2565,7 +2367,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
 
     // Función para enviar WhatsApp
-    private function enviarWhatsApp($codigo, $telefono, $dctoPorcentaje, $comentario, $habitacionNumero = '', $dctoTotalMonto = 0, $operationType = 'descuento_venta', $movventa = null, $comprobante = '')
+    private function enviarWhatsApp($codigo, $telefono, $dctoPorcentaje, $comentario, $dctoTotalMonto = 0, $operationType = 'descuento_venta', $movventa = null, $comprobante = '')
     {
         $auth_token = env('META_AUTH_TOKEN');
         $from = "202127742990342"; // ID de tu número WhatsApp Business
@@ -2582,7 +2384,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
             if ($operationType === 'anulacion_venta') {
                 $header = [
-                    ['type' => 'text', 'text' => '🚫 HotelHub | Anulacion de venta'],
+                    ['type' => 'text', 'text' => '🚫 PULSO+ | Anulación de venta'],
                 ];
 
                 $comprobanteTexto = $comprobante ?: ('VENTA-ID ' . ($movventa->id ?? 'N/A'));
@@ -2590,33 +2392,30 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                 $detalleTexto = "Detalles de anulacion: Comprobante {$comprobanteTexto} | Total S/ " . number_format($totalVenta, 2, '.', '');
 
                 $body = [
-                    ['type' => 'text', 'text' => $sucursal->nombrecomercial ?? 'HotelHub'],
+                    ['type' => 'text', 'text' => $sucursal->nombrecomercial ?? 'PULSO+'],
                     ['type' => 'text', 'text' => Auth::user()->name ?? 'Usuario'],
                     ['type' => 'text', 'text' => (string) $codigo],
                     ['type' => 'text', 'text' => '5 minuto(s)'],
                     ['type' => 'text', 'text' => "Acción: Anulacion | Tipo: Venta | Comentario: {$comentario}"],
                     ['type' => 'text', 'text' => $detalleTexto],
-                    ['type' => 'text', 'text' => 'HotelHub - Soluciones inteligentes para negocios'],
+                    ['type' => 'text', 'text' => 'PULSO+ | Gestión para organizaciones'],
                 ];
             } else {
                 $header = [
-                    ['type' => 'text', 'text' => '🚫 HotelHub | Descuento de venta'],
+                    ['type' => 'text', 'text' => 'PULSO+ | Descuento de venta'],
                 ];
 
                 $detalleTexto = 'Detalles de descuento: ';
-                if ($habitacionNumero) {
-                    $detalleTexto .= "Habitación {$habitacionNumero} - ";
-                }
                 $detalleTexto .= "Descuento S/ " . number_format($dctoTotalMonto, 2, '.', '') . " ({$dctoPorcentaje}%)";
 
                 $body = [
-                    ['type' => 'text', 'text' => $sucursal->nombrecomercial ?? 'HotelHub'],
+                    ['type' => 'text', 'text' => $sucursal->nombrecomercial ?? 'PULSO+'],
                     ['type' => 'text', 'text' => Auth::user()->name ?? 'Usuario'],
                     ['type' => 'text', 'text' => (string) $codigo],
                     ['type' => 'text', 'text' => '5 minuto(s)'],
                     ['type' => 'text', 'text' => "Acción: Descuento | Tipo: Venta | Descuento: {$dctoPorcentaje}% | Comentario: {$comentario}"],
                     ['type' => 'text', 'text' => $detalleTexto],
-                    ['type' => 'text', 'text' => 'HotelHub - Soluciones inteligentes para negocios'],
+                    ['type' => 'text', 'text' => 'PULSO+ | Gestión para organizaciones'],
                 ];
             }
 
@@ -2664,7 +2463,7 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
 
     // Función para enviar correo
-    private function enviarCorreo($codigo, $correo, $habitacionNumero = '', $dctoPorcentaje = 0, $dctoTotalMonto = 0, $comentario = '', $operationType = 'descuento_venta', $movventa = null, $comprobante = '')
+    private function enviarCorreo($codigo, $correo, $dctoPorcentaje = 0, $dctoTotalMonto = 0, $comentario = '', $operationType = 'descuento_venta', $movventa = null, $comprobante = '')
     {
         $fileName = 'comprobante.pdf';
 
@@ -2675,9 +2474,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
             $texto = "Código de aprobación: $codigo\nDetalle: $detalle\nComentario: $comentario";
         } else {
             $detalle = '';
-            if ($habitacionNumero) {
-                $detalle .= "Habitación $habitacionNumero — ";
-            }
             $detalle .= "Descuento S/ " . number_format($dctoTotalMonto, 2, '.', '') . " ({$dctoPorcentaje}%)";
             $texto = "Código de aprobación: $codigo\nDetalle: $detalle\nComentario: $comentario";
         }
@@ -2710,7 +2506,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                     'detalle' => [
                         'tipo_envio' => 'email',
                         'destinatario' => $correo,
-                        'habitacion' => $habitacionNumero,
                         'comprobante' => $comprobante,
                         'error' => $body,
                     ],
@@ -2729,7 +2524,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                     'detalle' => [
                         'tipo_envio' => 'email',
                         'destinatario' => $correo,
-                        'habitacion' => $habitacionNumero,
                         'comprobante' => $comprobante,
                         'respuesta_proveedor' => $datos,
                     ],
@@ -2746,7 +2540,6 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
                     'tipo_envio' => 'email',
                     'destinatario' => $correo,
                     'correo' => $correo,
-                    'habitacion' => $habitacionNumero,
                     'comprobante' => $comprobante,
                     'descuento' => [
                         'porcentaje' => $dctoPorcentaje,
@@ -2793,230 +2586,4 @@ $productosConsumidos = DetMovventum::with(['igv', 'unidad'])
 
 
 
-    public function verAlojamiento($id)
-    {
-        try {
-            // Obtener la habitación ocupada por ID
-
-
-            $movventa = Movventum::find($id);
-            // Obtener el movimiento actual de la habitación
-            $movimientoHabitacion = Movhabitacion::find($movventa->movhabitacion->id);
-            $habitacion = Habitacion::with('tipohabitacion')->findOrFail($movimientoHabitacion->habitacion_id);
-
-
-            // Obtener los productos consumidos relacionados con el movimiento
-            $productosConsumidos = DetMovhabitacion::whereHas('movhabitacion', function ($query) use ($movimientoHabitacion) {
-                $query->where('movimiento_id', $movimientoHabitacion->movimiento_id);
-            })
-                ->get()
-                ->map(function ($producto) {
-                    // Decodificar el JSON del campo json_producto
-                    $datosProducto = json_decode($producto->json_producto, true);
-
-                    // Formatear los datos en el formato esperado
-                    return [
-                        'producto_id' => $producto->producto_id, // ID del producto
-                        'clasificacion' => $producto->producto->clasificacion,
-                        'descripcion' => $datosProducto['descripcion'] ?? '', // Descripción del producto
-                        'precio_compra' => $datosProducto['precio_compra'] ?? 0, // Precio de compra
-                        'unidad' => $datosProducto['unidad'] ?? 'Unidad(es)', // Unidad
-                        'cantidad' => $datosProducto['cantidad'] ?? 0, // Cantidad
-                        'igv' => $datosProducto['igv'] ?? 0, // IGV
-                        'precio_unitario' => $datosProducto['precio_unitario'] ?? 0, // Precio unitario
-                        'total' => ($datosProducto['cantidad'] ?? 0) * ($datosProducto['precio_unitario'] ?? 0), // Total
-                        'codigo' => $datosProducto['codigo'] ?? '', // Código del producto
-                        'categoria' => $datosProducto['categoria'] ?? [],
-                        'opc_categoria' => $datosProducto['opc_categoria'] ?? [],
-                        'notas' => $datosProducto['notas'] ?? '', // Notas adicionales
-                        'situacion' => $producto->situacion ?? '', // Notas adicionales
-
-                    ];
-                });
-            $detallesJson = $productosConsumidos->toJson();
-            // Calcular el total de los productos consumidos
-            $totalProductosConsumidos = $productosConsumidos->reduce(function ($carry, $producto) {
-                $cantidad = $producto['cantidad'] ?? 0;
-                $precioUnitario = $producto['precio_unitario'] ?? 0;
-                return $carry + ($cantidad * $precioUnitario);
-            }, 0);
-            // Calcular el total de los productos a pagar (situacion = 'N')
-            $totalProductosAPagar = $productosConsumidos->reduce(function ($carry, $producto) {
-                if ($producto['situacion'] === 'N') { // Solo si la situacion es 'N'
-                    $cantidad = $producto['cantidad'] ?? 0;
-                    $precioUnitario = $producto['precio_unitario'] ?? 0;
-                    return $carry + ($cantidad * $precioUnitario);
-                }
-                return $carry;
-            }, 0);
-
-            //dd($totalProductosConsumidos);
-
-            // Preparar los datos de los huéspedes
-            $huespedes = Huesped::where('movhabitacion_id', $movimientoHabitacion->id)->get();
-
-            // Otros cálculos y datos
-            $sucursal_id = Auth::user()->persona->sucursal_id;
-            $personas = Persona::where('sucursal_id', $sucursal_id)->get();
-
-            $user = Auth::user();
-            $persona = Persona::find($user->persona_id);
-            $sucursal = Sucursal::find($persona->sucursal_id);
-
-            $categorias = Categorium::whereNull('categoria_id')->with('categorias')->get();
-
-
-            $huesped = Huesped::where('movhabitacion_id', $movimientoHabitacion->id)->first();
-            $clientePrincipal = $huesped->persona ?? null;
-
-            // Obtener los productos relacionados con la sucursal especificada
-            $productos = Producto::with(['relProductosucursal', 'relListaUnidadSucursal'])
-                ->whereHas('relProductosucursal', function ($query) use ($sucursal_id) {
-                    $query->where('sucursal_id', $sucursal_id);
-                })->where('clasificacion', 'Bien')
-                ->get();
-            $servicios = Producto::with(['relProductosucursal', 'relListaUnidadSucursal'])
-                ->whereHas('relProductosucursal', function ($query) use ($sucursal_id) {
-                    $query->where('sucursal_id', $sucursal_id);
-                })->where('clasificacion', 'Servicio')
-                ->get();
-
-            // Obtener los tipos de documento relacionados con `tipo_movimiento_id = 2`
-            $tiposDocumento = Tipodocumento::where('tipomovimiento_id', 2)
-                ->get();
-
-
-            $tipoDocumentoParametro = RelParametrosucursal::where('sucursal_id', $sucursal->id)
-                ->where('parametro_id', 10) // ID del parámetro para IGV
-                ->value('valor'); // Tomamos directamente el campo 'valor'
-            // Tipo de documento predeterminado (Ticket)
-            $tipoDocumentoPredeterminado = $tiposDocumento->where('id', $tipoDocumentoParametro)->first();
-            // Obtener la abreviatura del tipo de documento
-            $abreviatura = $tipoDocumentoPredeterminado->abreviatura ?? 'N/A';
-            // Obtener todas las cajas activas
-            $cajas = Caja::where('situacion', 'A')->where('sucursal_id', $sucursal->id)->get();
-
-            $caja = $cajas->first();
-
-            // Determinar la serie
-            $serie = $caja ? str_pad($caja->serie, 3, "0", STR_PAD_LEFT) : '001';
-            $movimiento = Movimiento::find($movimientoHabitacion->movimiento_id);
-            // Calcular el número correlativo (basado en registros existentes en `movimiento`)
-            $correlativo = $movimiento->numero;
-            // Formatear el número correlativo con ceros a la izquierda
-            $correlativo = str_pad($correlativo, 8, "0", STR_PAD_LEFT);
-
-
-            // Generar el número de comprobante
-            $numeroComprobante = "{$abreviatura}{$serie}-{$correlativo}";
-
-            // Preparar los datos de los huéspedes
-            $huespedes = Huesped::where('movhabitacion_id', $movimientoHabitacion->id)->get();
-            $mediospago = Mediopago::where('situacion', true)->get();
-            $detallesMovimientosJson = [
-                [
-                    'tipo' => 'Pagado', // Tipo de pago
-                    'monto' => ($movimientoHabitacion->situacion == 'A'
-                        ? $movimientoHabitacion->total
-                        : 0) + $totalProductosAPagar, // Condicional para sumar solo si situación es 'A'
-                    'medio_pago' => 'Efectivo',
-                    'mediopago_id' => 1,
-
-                    'notas' => '',
-                ]
-            ];
-
-
-            // Convertir el array a JSON
-            $detallesMovimientosJson = json_encode($detallesMovimientosJson); // Ahora es una cadena JSON
-
-            // Preparar los datos de los huéspedes
-            $huespedes = Huesped::where('movhabitacion_id', $movimientoHabitacion->id)->get();
-            $medio_pagos = Mediopago::where('situacion', true)->get();
-            $pos = Pasarelapago::where('situacion', true)->get(); // Tabla para P.O.S.
-            $tarjetas = Tarjetum::where('situacion', true)->get(); // Tabla para Tarjetas
-            $bancos = Banco::where('situacion', true)->get(); // Tabla para Bancos
-            $billeteras = Billeteradigital::where('situacion', true)->get(); // Tabla para Billeteras Digitales
-            $jsonPrecioHoras = json_decode($habitacion->tipohabitacion->json_precio_horas, true);
-
-
-            return view('movhabitacion.ver', compact(
-                'habitacion',
-                'medio_pagos',
-                'pos',
-                'tarjetas',
-                'bancos',
-                'billeteras',
-                'movimientoHabitacion',
-                'productosConsumidos',
-                'huespedes',
-                'clientePrincipal',
-                'totalProductosConsumidos',
-                'tiposDocumento',
-                'tipoDocumentoPredeterminado',
-                'numeroComprobante',
-                'cajas',
-                'detallesJson',
-                'sucursal_id',
-                'detallesMovimientosJson',
-                'mediospago',
-                'totalProductosAPagar',
-                'jsonPrecioHoras',
-            ));
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'errors' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    private function generateNumeroMovcaja($sucursal_id, $caja_id, $conceptopago_id = null)
-    {
-
-        // Obtener el último número registrado en la sucursal y caja específicas
-        $ultimoMovimiento = Movcaja::join('movimiento', 'movcaja.movimiento_id', '=', 'movimiento.id')
-            ->where('movcaja.sucursal_id', $sucursal_id)
-            ->where('movcaja.conceptopago_id', $conceptopago_id)
-            ->where('movcaja.caja_id', $caja_id)
-
-            ->orderBy('movimiento.numero', 'desc')
-            ->select('movimiento.numero')
-            ->first();
-
-        // Extraer el número y convertirlo a entero
-        $ultimoNumero = $ultimoMovimiento ? (int) $ultimoMovimiento->numero : 0;
-
-        // Incrementar el número en 1 y formatearlo con ceros iniciales
-        $nuevoNumero = str_pad($ultimoNumero + 1, 8, '0', STR_PAD_LEFT);
-
-        return $nuevoNumero;
-    }
-        private function generateNumeroMovHabitacion(int $sucursal_id): string
-    {
-        // Obtener el último movimiento asociado a movhabitacion
-        // en esa sucursal, ordenado por creación real
-        $ultimoMovimiento = \App\Models\Movhabitacion::join(
-            'movimiento',
-            'movhabitacion.movimiento_id',
-            '=',
-            'movimiento.id'
-        )
-            ->where('movhabitacion.sucursal_id', $sucursal_id)
-            ->whereNull('movhabitacion.deleted_at')
-            ->whereNull('movimiento.deleted_at')
-            ->orderBy('movhabitacion.created_at', 'desc') // orden REAL
-            ->orderBy('movhabitacion.id', 'desc')
-            ->select('movimiento.numero')
-            ->first();
-
-        // Extraer número actual
-        $ultimoNumero = $ultimoMovimiento
-            ? (int) $ultimoMovimiento->numero
-            : 0;
-
-        // Incrementar y formatear
-        return str_pad($ultimoNumero + 1, 8, '0', STR_PAD_LEFT);
-    }
-    
 }

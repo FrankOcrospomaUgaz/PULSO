@@ -21,7 +21,7 @@ class ErpBillingNotices
             $response = Http::timeout(5)->withHeaders([
                 'X-SaaS-Timestamp' => $timestamp,
                 'X-SaaS-Signature' => $signature,
-            ])->withBody($body, 'application/json')->post($baseUrl.'/api/integrations/hotelhub/notices');
+            ])->withBody($body, 'application/json')->post($baseUrl.'/api/integrations/pulso/notices');
             if (!$response->successful()) {
                 Log::warning('ERP billing notices returned a non-success status', ['status' => $response->status()]);
                 return [];

@@ -34,10 +34,6 @@ class Piso extends Model
     {
         return $value ? 'Activo' : 'Eliminado';
     }
-    public function habitaciones()
-    {
-        return $this->hasMany(Habitacion::class);
-    }
 
 
 }

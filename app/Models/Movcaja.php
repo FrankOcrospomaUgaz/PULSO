@@ -15,7 +15,7 @@ class Movcaja extends Model
     protected $fillable = [
         'conceptopago_id', 'moneda', 'tipocambio', 'total',
         'caja_id', 'caja', 'turno_id', 'json_turno',
-        'movimiento_id', 'sucursal_id', 'adelantomovreserva_id'
+        'movimiento_id', 'sucursal_id'
     ];
 
     /** Relaciones principales */
@@ -37,11 +37,6 @@ class Movcaja extends Model
     public function sucursal()
     {
         return $this->belongsTo(\App\Models\Sucursal::class, 'sucursal_id', 'id');
-    }
-
-    public function adelantomovreserva()
-    {
-        return $this->belongsTo(\App\Models\Movreserva::class, 'adelantomovreserva_id', 'id');
     }
 
     public function turno()

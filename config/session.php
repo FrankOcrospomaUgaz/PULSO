@@ -128,7 +128,7 @@ return [
 
     'cookie' => env(
         'SESSION_COOKIE',
-        Str::slug(env('APP_NAME', 'Hotel Hub'), '_').'_session'
+        Str::slug(env('APP_NAME', 'PULSO+'), '_').'_session'
     ),
 
     /*

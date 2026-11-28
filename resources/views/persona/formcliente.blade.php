@@ -250,13 +250,10 @@ Pasaporte
 
                            <input type="hidden" name="accion" id="accion" value="{{ $accion }}">
                             @if ($accion == 'CHECKIN')
-                                <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
                             @endif
                             @if ($accion == 'EDITCHECKIN')
-                                <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
                             @endif
                             @if ($accion == 'CHECKOUT')
-                                <input type="hidden" name="habitacion_id" value="{{ $habitacion_id }}">
                             @endif
                             @if ($accion == 'CONVERTIR')
                                 <input type="hidden" name="movventa_id" value="{{ $movventa_id }}">

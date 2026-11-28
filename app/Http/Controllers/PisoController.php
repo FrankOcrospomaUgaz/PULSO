@@ -155,12 +155,11 @@ class PisoController extends Controller
         
             $piso = Piso::findOrFail($id);
 
-            // Eliminar lógicamente el piso y sus habitaciones relacionadas
-            $piso->habitaciones()->delete();
+            // Eliminar el nivel del edificio.
             $piso->delete();
             return response()->json([
                 'success' => true,
-                'message' => 'Piso y habitaciones relacionadas eliminado correctamente.',
+                'message' => 'Piso eliminado correctamente.',
                 'redirect_url' => route('pisos.index')
             ]);
         } catch (\Exception $e) {

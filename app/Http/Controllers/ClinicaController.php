@@ -5,9 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\CitaClinica;
 use App\Models\HorarioProfesionalClinico;
 use App\Models\NotificacionClinica;
+use App\Models\Persona;
 use App\Models\PacienteClinico;
+use App\Models\Personamaestro;
 use App\Models\ProfesionalClinico;
+use App\Models\Perfile;
+use App\Models\Menuopcione;
+use App\Models\Rol;
+use App\Models\Sucursal;
 use App\Models\ServicioClinico;
+use App\Models\Ubigeo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -67,6 +74,28 @@ class ClinicaController extends Controller
     public function create(Request $request, string $type)
     {
         [, $title] = $this->catalog($type);
+        if ($type === 'pacientes') {
+            $sucursal_id = $this->sucursal($request);
+            $sucursal = Sucursal::findOrFail($sucursal_id);
+            $persona = new Persona();
+            $personamaestros = Personamaestro::get();
+            $departamentos = Ubigeo::where('tipo', '2')->get();
+            $provincias = Ubigeo::where('tipo', '3')->where('ubigeo_id', $sucursal->ubigeo->ubigeo->ubigeo_id)->get();
+            $distritos = Ubigeo::where('tipo', '4')->where('ubigeo_id', $sucursal->ubigeo->ubigeo_id)->get();
+            $perfiles = Perfile::where('id', '!=', 9)->get();
+            $opciones = Menuopcione::where('estado', true)->get();
+            $roles = Rol::get();
+            $opcion = 'documento';
+            $accion = 'CLINICA';
+            $registroClinico = true;
+            $row = null;
+
+            return view('clinica.persona-form', compact(
+                'persona', 'personamaestros', 'departamentos', 'provincias', 'distritos',
+                'sucursal_id', 'sucursal', 'perfiles', 'opciones', 'roles', 'opcion',
+                'accion', 'registroClinico', 'row', 'title', 'type'
+            ));
+        }
         return view('clinica.form', ['row' => null, 'title' => $title, 'type' => $type]);
     }
 
@@ -97,6 +126,27 @@ class ClinicaController extends Controller
     {
         [$model, $title] = $this->catalog($type);
         $row = $model::where('sucursal_id', $this->sucursal($request))->findOrFail($id);
+        if ($type === 'pacientes' && $row->persona_id && ($persona = Persona::where('sucursal_id', $row->sucursal_id)->find($row->persona_id))) {
+            $sucursal_id = $row->sucursal_id;
+            $sucursal = Sucursal::findOrFail($sucursal_id);
+            $personamaestros = Personamaestro::get();
+            $departamentos = Ubigeo::where('tipo', '2')->get();
+            $provincias = Ubigeo::where('tipo', '3')->where('ubigeo_id', $sucursal->ubigeo->ubigeo->ubigeo_id)->get();
+            $distritos = Ubigeo::where('tipo', '4')->where('ubigeo_id', $sucursal->ubigeo->ubigeo_id)->get();
+            $perfiles = Perfile::where('id', '!=', 9)->get();
+            $opciones = Menuopcione::where('estado', true)->get();
+            $roles = Rol::get();
+            $opcion = 'documento';
+            $accion = 'CLINICA';
+            $registroClinico = true;
+            $editing = true;
+
+            return view('clinica.persona-form', compact(
+                'persona', 'personamaestros', 'departamentos', 'provincias', 'distritos',
+                'sucursal_id', 'sucursal', 'perfiles', 'opciones', 'roles', 'opcion',
+                'accion', 'registroClinico', 'row', 'title', 'type', 'editing'
+            ));
+        }
         return view('clinica.form', compact('row', 'title', 'type'));
     }
 

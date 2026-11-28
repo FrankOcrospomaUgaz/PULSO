@@ -82,7 +82,7 @@
                                 @foreach ($encuestas as $encuesta)
                                     <tr>
                                         <td>
-                                            {!! QrCode::size(100)->generate('https://hotel-hub-encuestas.vercel.app/' . $encuesta->uuid) !!}
+                                            {!! QrCode::size(100)->generate(url('/encuestas/' . $encuesta->uuid)) !!}
                                         </td>
                                         <td style="min-width: 50px; word-wrap: break-word; white-space: normal;"">{{ $encuesta->nombre }}</td>
                                         <td style="min-width: 220px; word-wrap: break-word; white-space: normal;">
@@ -172,7 +172,7 @@
                                                         <a href="javascript:void(0);"
                                                             class="btn-floating {{ $operacion->color }} darken-1 waves-light tooltipped btn-copiar"
                                                             data-tooltip="{{ $operacion->descripcion }}"
-                                                            onclick="copiarUrlQr('{{ 'https://hotel-hub-encuestas.vercel.app/' . $encuesta->uuid }}')">
+                                                            onclick="copiarUrlQr('{{ url('/encuestas/' . $encuesta->uuid) }}')">
                                                             {!! $operacion->imagen !!}
                                                         </a>
                                                     @elseif ($operacion->accion === 'encuesta.finalizar' && $encuesta->estado == 'VIGENTE')

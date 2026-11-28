@@ -78,7 +78,6 @@
 @elseif (in_array($parametro->descripcion, [
     'Restringir tipo de cambio',
     'Impresiones automáticas',
-    'housekeeping',
     'Carrito',
     'Visualizar Finalizado',
     'Ubigeo',
@@ -91,7 +90,6 @@
         $iconos = [
             'Restringir tipo de cambio' => 'fa-scale-balanced',
             'Impresiones automáticas' => 'fa-print',
-            'housekeeping' => 'fa-broom',
             'Carrito' => 'fa-cart-shopping',
             'Visualizar Finalizado' => 'fa-eye',
             'Ubigeo' => 'fa-map-location-dot',
@@ -165,14 +163,6 @@
                                                                 <option value="A4" {{ old('tipo_impresion', $parametro->valor) == 'A4' ? 'selected' : '' }}>A4</option>
                                                             </select>
                                                             <label for="tipo_impresion_{{ $parametro->parametro_id }}">{{ $parametro->descripcion }}</label>
-                                                        @elseif ($parametro->descripcion == 'Vista control de habitaciones')
-                                                            <i class="fa-solid fa-eye prefix"></i> <!-- Ícono para vista -->
-                                                            <select name="parametro_{{ $parametro->parametro_id }}" id="parametro_{{ $parametro->parametro_id }}">
-                                                                <option value="Normal" {{  $parametro->valor == 'Normal' ? 'selected' : '' }}>Normal</option>
-                                                                <option value="Amplia" {{ $parametro->valor == 'Amplia' ? 'selected' : '' }}>Amplia</option>
-                                                            </select>
-                                                            <label for="parametro_{{ $parametro->parametro_id }}">{{ $parametro->descripcion }}</label>
-
                                                         @elseif ($parametro->descripcion == 'Modalidad tarifario')
                                                             <i class="fa-solid fa-calendar-day prefix"></i>
                                                             <select name="parametro_{{ $parametro->parametro_id }}" id="parametro_{{ $parametro->parametro_id }}">

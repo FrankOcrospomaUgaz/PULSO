@@ -32,7 +32,7 @@
                                                 <i class="fa-solid fa-user-slash"></i>
                                             </button>
                                             <button
-                                                href="{{ route('persona.create', [$sucursal->id, 'VENTA', $habitacion->id ?? null]) }}"
+                                                href="{{ route('persona.create', [$sucursal->id, 'VENTA']) }}"
                                                 class="btn teal right tooltipped btn-crear persona-btn" id="btnNuevaPersona"
                                                 data-tooltip="Nueva persona" type="button"
                                                 style="display:none; border-radius:99em">

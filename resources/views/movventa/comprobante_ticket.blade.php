@@ -315,11 +315,11 @@ $numeroTexto = new NumeroTexto();
         @if ($dataGeneral->tipo_documento !== 'T')
             <table class="super-small" width="100%">
                 <tr>
-                    <td align="center">Representación impresa del comprobante electrónico. Consulte en <font class="bold">https://www.hotelhub.com.pe</font></td>
+                    <td align="center">Representación impresa del comprobante electrónico. Consulte en <font class="bold">https://www.pulsoplus.net</font></td>
                 </tr>
                 <tr>
                     <td align="center">
-                        <img src="{{ public_path('img/Logo_HotelHub_tr.png') }}" alt="Logo HotelHub" height="55">
+                        <img src="{{ public_path('img/pulso-logo.jpg') }}" alt="Logo PULSO+" height="55">
                     </td>
                 </tr>
             </table>

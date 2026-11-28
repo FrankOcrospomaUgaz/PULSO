@@ -26,11 +26,11 @@ Artisan::command('backup:run', function () {
     $filePath = $backups->path(env('BACKUP_FILE_NAME'));
 
     $date = Carbon::now()->format('Y-m-d');
-    $fileName = 'hotelhub_' . $date . '.gz';
+    $fileName = 'pulso_' . $date . '.gz';
     $bucketName = env('GOOGLE_CLOUD_STORAGE_BUCKET_BACKUPS');
 
     $previousDate = Carbon::now()->subDays(3)->format('Y-m-d');
-    $previousFileName = 'hotelhub_' . $previousDate . '.gz';
+    $previousFileName = 'pulso_' . $previousDate . '.gz';
 
     $storage = new StorageClient([
         'projectId' => env('GOOGLE_CLOUD_PROJECT_ID'),
@@ -42,7 +42,7 @@ Artisan::command('backup:run', function () {
     $object = $bucket->object($previousFileName);
     if ($object->exists()) $object->delete();
 
-    $subject = 'HotelHUB';
+    $subject = 'PULSO+';
     $emails = explode('|', env('BACKUP_EMAILS'));
     $status = '🟢 SUCCESS';
     $info = array(

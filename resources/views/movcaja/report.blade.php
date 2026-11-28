@@ -99,7 +99,7 @@
                                     </div>
                                 </div>
                                 <div class="col s12 m12 l4 search-with-report rigth-align ">
-                                
+
                                         <button class="btn teal tooltipped btn-buscar" id="btn-MovVenta"
                                             data-tooltip="Buscar" type="button" onclick="filterCaja()"><i
                                                 class="fa-solid fa-magnifying-glass white-text"></i></button>
@@ -111,7 +111,7 @@
                                             data-tooltip="Reporte en Excel" type="button"
                                             onclick="generateExcelReportCaja()"><i
                                                 class="fa-solid fa-file white-text right"></i>Excel</button>
-                                               
+
                                 </div>
                             </div>
 
@@ -417,19 +417,7 @@
                                                                     {!! $operacion->imagen !!}
                                                                 </a>
                                                             @endif
-                                                            @if (
-                        $operacion->accion == 'movventa.alojamiento' &&
-                        optional($movcaja->movventa)->movhabitacion &&
-                        $movcaja->movimiento->situacion == 'Activado'
-                    )
-                                                                <a href="{{ route($operacion->accion, $movcaja->movventa->id) }}"
-                                                                    class="btn-floating {{ $operacion->color }} darken-1 waves-light btn-cargar-crud "
-                                                                    data-icono="{{ $operacion->imagen }}"
-                                                                    data-titulo="{{ $operacion->descripcion }}"
-                                                                    data-tooltip="{{ $operacion->comentario }}">
-                                                                    {!! $operacion->imagen !!}
-                                                                </a>
-                                                            @endif
+
 
                                                             @if ($operacion->accion === 'movcaja.verDetalles')
                                                                 <a href="{{ route($operacion->accion, $movcaja->id) }}"

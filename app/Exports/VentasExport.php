@@ -63,7 +63,7 @@ class VentasExport implements FromCollection, WithStyles, WithColumnWidths, Shou
                 $venta->consumo,
                 $venta->tipo_pago,
                 $detalles,
-                $venta->movimiento->movhabitacion->habitacion->numero ?? ''
+                ''
             ]);
         }
 

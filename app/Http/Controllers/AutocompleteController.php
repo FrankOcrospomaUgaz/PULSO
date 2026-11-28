@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Habitacion;
 use App\Models\Menuopcione;
 use App\Models\Mediopago;
 use App\Models\Persona;
@@ -234,55 +233,6 @@ class AutocompleteController extends Controller
             return [
                 'id' => $solicitud->id,
                 'label' => $label,
-            ];
-        });
-
-        return response()->json($items);
-    }
-
-    public function habitaciones(Request $request)
-    {
-        $limit = $this->sanitizeLimit($request->input('limit'));
-        $term = trim((string) $request->input('q', ''));
-
-        if ($term === '') {
-            return response()->json([]);
-        }
-
-        $sucursalId = optional(Auth::user()->persona)->sucursal_id;
-
-        $query = Habitacion::with('tipohabitacion', 'piso')
-            ->select('id', 'numero', 'tipohabitacion_id', 'piso_id', 'precio')
-            ->whereNull('deleted_at');
-
-        if ($sucursalId) {
-            $query->where('sucursal_id', $sucursalId);
-        }
-
-        $query->where(function ($q) use ($term) {
-            $q->where('numero', 'ILIKE', "%{$term}%")
-                ->orWhereHas('tipohabitacion', function ($tipo) use ($term) {
-                    $tipo->where('nombre', 'ILIKE', "%{$term}%");
-                })
-                ->orWhereHas('piso', function ($piso) use ($term) {
-                    $piso->where('nombre', 'ILIKE', "%{$term}%");
-                });
-        });
-
-        $habitaciones = $query
-            ->orderBy('numero')
-            ->limit($limit)
-            ->get();
-
-        $items = $habitaciones->map(function ($habitacion) {
-            $tipo = optional($habitacion->tipohabitacion)->nombre ?? 'Sin categoria';
-            $piso = optional($habitacion->piso)->nombre ?? 'Sin piso';
-            $precio = number_format($habitacion->precio ?? 0, 2);
-
-            return [
-                'id' => $habitacion->id,
-                'label' => "Hab. {$habitacion->numero} - {$tipo} ({$piso}) - PEN {$precio}",
-                'value' => $habitacion->numero,
             ];
         });
 

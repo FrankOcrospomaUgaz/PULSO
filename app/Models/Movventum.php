@@ -42,7 +42,7 @@ class Movventum extends Model
 
     protected $perPage = 10;
 
-    protected $fillable = ['json_sucursal', 'serie', 'anio', 'tipo_detalle', 'consumo', 'tipo_pago', 'estado', 'tipo_venta', 'moneda', 'tipocambio', 'subtotal', 'igv', 'total', 'movimiento_id', 'sucursal_id', 'tipo_cobro', 'movearlylate_id', 'movhabitacion_id', 'movreserva_id', 'compromiso_pago_id', 'detraccion', 'porcentaje_detraccion', 'cuenta_detraccion', 'codigo_bien_detraccion'];
+    protected $fillable = ['json_sucursal', 'serie', 'anio', 'tipo_detalle', 'consumo', 'tipo_pago', 'estado', 'tipo_venta', 'moneda', 'tipocambio', 'subtotal', 'igv', 'total', 'movimiento_id', 'sucursal_id', 'tipo_cobro', 'compromiso_pago_id', 'detraccion', 'porcentaje_detraccion', 'cuenta_detraccion', 'codigo_bien_detraccion'];
 
     // Relación con el modelo Movimiento
     public function movimiento()
@@ -60,12 +60,6 @@ class Movventum extends Model
     public function detMovventas()
     {
         return $this->hasMany(\App\Models\DetMovventum::class, 'movventa_id', 'id');
-    }
-
-    // Relación con Movhabitacion
-    public function movhabitacion()
-    {
-        return $this->belongsTo(\App\Models\Movhabitacion::class, 'movhabitacion_id', 'id');
     }
 
 public function movcaja()

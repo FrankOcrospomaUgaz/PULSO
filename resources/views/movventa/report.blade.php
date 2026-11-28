@@ -166,7 +166,7 @@
                                     <label for="txtIdTipodocumento">Tipo</label>
                                 </div>
                             </div>
-                          
+
 
                             <div class="row valign-wrapper" style="margin-bottom: -25px;">
                                 <div class="col s12 m8 left-align valign-wrapper">
@@ -324,15 +324,7 @@
                                                         </button>
                                                     </form>
                                                     @endif
-                                                      @if($operacion->accion == 'movventa.alojamiento' && $movventa->movhabitacion && $movventa->movimiento->situacion == 'Activado')
-                                                        <a href="{{ route($operacion->accion, $movventa->id) }}"
-                                                            class="btn-floating {{ $operacion->color }} darken-1 waves-light btn-cargar-crud "
-                                                            data-icono="{{  $operacion->imagen }}"
-                                                            data-titulo="{{ $operacion->descripcion }}"
-                                                            data-tooltip="{{ $operacion->comentario }}">
-                                                            {!! $operacion->imagen !!}
-                                                        </a>
-                                                    @endif
+
                                                 @endif
                                             @endforeach
                                             @if (($movventa->movimiento->tipodocumento_id == 9 || ($movventa->movimiento->tipodocumento->nombre ?? '') === 'Ticket de venta') && $movventa->movimiento->situacion == 'Activado')

@@ -17,4 +17,9 @@ class PacienteClinico extends Model
     {
         return $this->hasMany(CitaClinica::class, 'paciente_id');
     }
+
+    public function persona()
+    {
+        return $this->belongsTo(Persona::class, 'persona_id');
+    }
 }
